@@ -1,6 +1,8 @@
-opencv-python>=4.9
+# Python 3.9-3.11 only: mediapipe 0.10.14 has no wheels for 3.12+.
+# numpy<2 and the pinned opencv keep mediapipe 0.10.14 from crashing ("compiled using NumPy 1.x").
 mediapipe==0.10.14
-numpy>=1.26
+numpy>=1.26,<2
+opencv-contrib-python==4.10.0.84
 requests>=2.31
 python-dotenv>=1.0
 pywinctl>=0.3

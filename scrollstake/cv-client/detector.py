@@ -1,11 +1,19 @@
 """Webcam "looking down at phone" heuristic using MediaPipe face mesh.
 
 We calibrate a baseline while the user looks at their screen, then flag when
-either head pitch proxy or iris vertical position deviates from that baseline.
+head pitch proxy or iris vertical position deviates from that baseline.
+
+False-positive defences (see config.py):
+  * median filter over the last SMOOTH_FRAMES readings
+  * eye reading ignored while blinking / squinting (eyelid opening too small)
+  * optional head direction (HEAD_SIGN) so looking UP / stretching does not count
+  * CAM_MODE="both" requires head AND eyes
+  * calibration clock starts at first face, and is restarted if the user moved a lot
 """
 import time
+from collections import deque
 from dataclasses import dataclass
-from typing import Optional
+from typing import Deque, Optional, Tuple
 
 import cv2
 import mediapipe as mp
@@ -22,8 +30,13 @@ R_TOP, R_BOTTOM, R_IRIS = 386, 374, 473
 @dataclass
 class Reading:
     face: bool
-    head: float = 0.0   # nose position within forehead->chin span (0..1)
-    eye: float = 0.0    # iris vertical position within eyelids (0 top .. 1 bottom)
+    head: float = 0.0       # nose position within forehead->chin span (0..1)
+    eye: Optional[float] = None  # iris vertical position in eyelids (0 top .. 1 bottom); None while blinking
+    eye_open: float = 0.0   # eyelid opening as fraction of face height (diagnostic)
+
+
+def _median(d: Deque[float]) -> Optional[float]:
+    return float(np.median(d)) if d else None
 
 
 class LookDownDetector:
@@ -34,12 +47,26 @@ class LookDownDetector:
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5,
         )
+        self._head_hist: Deque[float] = deque(maxlen=max(1, config.SMOOTH_FRAMES))
+        self._eye_hist: Deque[float] = deque(maxlen=max(1, config.SMOOTH_FRAMES))
+        self.last_face_seen = time.time()
+        self.recalibrate()
+
+    # ------------------------------------------------------------------ #
+    def recalibrate(self) -> None:
         self.baseline_head: Optional[float] = None
         self.baseline_eye: Optional[float] = None
         self._cal_head, self._cal_eye = [], []
-        self._cal_start = time.time()
-        self.last_face_seen = time.time()
+        self._cal_start: Optional[float] = None  # set on first face seen
+        self.last_deltas: Tuple[Optional[float], Optional[float]] = (None, None)
+        self._head_hist.clear()
+        self._eye_hist.clear()
 
+    @property
+    def calibrated(self) -> bool:
+        return self.baseline_head is not None
+
+    # ------------------------------------------------------------------ #
     def read(self, frame_bgr) -> Reading:
         res = self.mesh.process(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
         if not res.multi_face_landmarks:
@@ -48,42 +75,83 @@ class LookDownDetector:
         self.last_face_seen = time.time()
 
         span = lm[CHIN].y - lm[FOREHEAD].y
-        head = (lm[NOSE_TIP].y - lm[FOREHEAD].y) / span if span > 1e-6 else 0.5
+        if span <= 1e-6:
+            return Reading(face=False)
+        head = (lm[NOSE_TIP].y - lm[FOREHEAD].y) / span
 
-        def eye_ratio(top, bottom, iris):
+        def lid(top, bottom, iris):
             h = lm[bottom].y - lm[top].y
-            return (lm[iris].y - lm[top].y) / h if h > 1e-6 else 0.5
+            return h, ((lm[iris].y - lm[top].y) / h if h > 1e-6 else 0.5)
 
-        eye = (eye_ratio(L_TOP, L_BOTTOM, L_IRIS) + eye_ratio(R_TOP, R_BOTTOM, R_IRIS)) / 2
-        return Reading(face=True, head=float(head), eye=float(eye))
+        hl, el = lid(L_TOP, L_BOTTOM, L_IRIS)
+        hr, er = lid(R_TOP, R_BOTTOM, R_IRIS)
+        eye_open = ((hl + hr) / 2) / span
+        eye = (el + er) / 2 if eye_open >= config.MIN_EYE_OPEN else None  # blink/squint: ignore
+        return Reading(face=True, head=float(head), eye=None if eye is None else float(eye),
+                       eye_open=float(eye_open))
 
-    @property
-    def calibrated(self) -> bool:
-        return self.baseline_head is not None
-
+    # ------------------------------------------------------------------ #
     def calibrate(self, r: Reading) -> bool:
         """Feed readings during startup. Returns True once calibration is done."""
         if self.calibrated:
             return True
         if r.face:
+            if self._cal_start is None:
+                self._cal_start = time.time()
             self._cal_head.append(r.head)
-            self._cal_eye.append(r.eye)
-        if time.time() - self._cal_start >= config.CALIBRATION_SECONDS and len(self._cal_head) > 10:
+            if r.eye is not None:
+                self._cal_eye.append(r.eye)
+        if (
+            self._cal_start is not None
+            and time.time() - self._cal_start >= config.CALIBRATION_SECONDS
+            and len(self._cal_head) > 10
+            and len(self._cal_eye) > 5
+        ):
+            if np.std(self._cal_head) > 0.03:  # user was moving around: start over
+                print("[cal] too much movement during calibration, retrying...")
+                self._cal_start, self._cal_head, self._cal_eye = None, [], []
+                return False
             self.baseline_head = float(np.median(self._cal_head))
             self.baseline_eye = float(np.median(self._cal_eye))
+            print(f"[cal] baseline head={self.baseline_head:.3f} eye={self.baseline_eye:.3f}")
             return True
         return False
 
+    # ------------------------------------------------------------------ #
+    def deltas(self, r: Reading) -> Tuple[Optional[float], Optional[float]]:
+        """Smoothed (signed head delta, eye delta) vs baseline. None if unavailable."""
+        if not self.calibrated or not r.face:
+            return None, None
+        self._head_hist.append(r.head)
+        if r.eye is not None:
+            self._eye_hist.append(r.eye)
+        h, e = _median(self._head_hist), _median(self._eye_hist)
+        return (
+            None if h is None else h - self.baseline_head,
+            None if e is None else e - self.baseline_eye,
+        )
+
     def reason(self, r: Reading) -> Optional[str]:
-        """Returns a distraction reason or None."""
+        """Returns a distraction reason or None. Call once per frame."""
         if not self.calibrated:
             return None
         if not r.face:
             if time.time() - self.last_face_seen > config.FACE_MISSING_SECONDS:
                 return "cam:face_missing"
             return None
-        if abs(r.head - self.baseline_head) > config.HEAD_DELTA:
+
+        dh, de = self.deltas(r)
+        self.last_deltas = (dh, de)  # for the preview overlay / tune.py (don't call deltas() twice)
+        if config.HEAD_SIGN:
+            head_hit = dh is not None and dh * config.HEAD_SIGN > config.HEAD_DELTA
+        else:
+            head_hit = dh is not None and abs(dh) > config.HEAD_DELTA
+        eye_hit = de is not None and de > config.EYE_DELTA
+
+        if config.CAM_MODE == "both":
+            return "cam:looking_down" if (head_hit and eye_hit) else None
+        if head_hit:
             return "cam:head_moved"
-        if r.eye - self.baseline_eye > config.EYE_DELTA:
+        if eye_hit:
             return "cam:looking_down"
         return None
