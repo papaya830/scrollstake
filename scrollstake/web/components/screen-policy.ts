@@ -10,11 +10,11 @@ export type DetectionResult = {
 };
 
 const BLOCKED: Array<{ category: ScreenCategory; terms: string[] }> = [
-  { category: "social", terms: ["instagram", "tiktok", "twitter", "x.com", "facebook", "snapchat", "reddit", "pinterest"] },
-  { category: "shopping", terms: ["amazon", "shein", "aliexpress", "temu", "ebay", "etsy", "shopify", "shopping cart"] },
+  { category: "social", terms: ["instagram", "tiktok", "twitter", "x.com", "facebook", "snapchat", "reddit", "pinterest", "tumblr", "linkedin feed"] },
+  { category: "shopping", terms: ["amazon", "shein", "aliexpress", "temu", "ebay", "etsy", "shopify", "shopping cart", "walmart", "best buy"] },
   { category: "messaging", terms: ["imessage", "whatsapp", "messenger", "discord", "telegram"] },
-  { category: "entertainment", terms: ["netflix", "twitch", "hulu", "disney+", "prime video", "youtube", "spotify"] },
-  { category: "games", terms: ["roblox", "fortnite", "miniclip", "epic games", "league of legends"] },
+  { category: "entertainment", terms: ["netflix", "twitch", "hulu", "disney+", "prime video", "youtube", "spotify", "crunchyroll"] },
+  { category: "games", terms: ["roblox", "fortnite", "miniclip", "epic games", "league of legends", "minecraft", "valorant"] },
 ];
 
 export const DEFAULT_APPROVED_RESOURCES = [
@@ -25,6 +25,16 @@ export const DEFAULT_APPROVED_RESOURCES = [
   "canvas.ubc.ca",
   "docs.google.com",
   "notion.so",
+];
+
+const NATIVE_APP_TITLES: Array<{ title: string; category: ScreenCategory }> = [
+  { title: "discord", category: "messaging" },
+  { title: "messages", category: "messaging" },
+  { title: "slack", category: "messaging" },
+  { title: "whatsapp", category: "messaging" },
+  { title: "telegram", category: "messaging" },
+  { title: "spotify", category: "entertainment" },
+  { title: "steam", category: "games" },
 ];
 
 function normalize(value: string): string {
@@ -72,6 +82,36 @@ export function classifyOcrText(text: string, allowedResources: string[]): Detec
   }
 
   return null;
+}
+
+/**
+ * The title-bar crop is reserved for native app names. Keep this separate from
+ * normal page OCR so ordinary study text containing "messages" cannot trigger.
+ */
+export function classifyNativeAppTitle(text: string): DetectionResult | null {
+  const haystack = normalize(text);
+  if (!haystack) return null;
+  const nativeApp = NATIVE_APP_TITLES.find((app) => containsWholePhrase(haystack, app.title));
+  if (!nativeApp) return null;
+  const label = nativeApp.title[0].toUpperCase() + nativeApp.title.slice(1);
+  return {
+    classification: "disallowed",
+    category: nativeApp.category,
+    confidence: 0.97,
+    matchedResource: nativeApp.title,
+    reason: `Native app detected: ${label}`,
+  };
+}
+
+/** Used only after both the full frame and its title bar fail to identify an approved resource. */
+export function classifyUnapprovedScreen(): DetectionResult {
+  return {
+    classification: "disallowed",
+    category: "other",
+    confidence: 0.9,
+    matchedResource: "unapproved_screen",
+    reason: "Unapproved screen detected. Return to an approved study resource.",
+  };
 }
 
 export function isDetectionResult(value: unknown): value is DetectionResult {

@@ -84,6 +84,18 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
 .camera-placeholder { display: grid; width: 100%; height: 100%; place-items: center; color: var(--muted); font-size: 2.6rem; }
 .camera-copy strong { display: block; font-size: clamp(2rem, 4vw, 3.4rem); letter-spacing: -.06em; line-height: 1; }
 .camera-copy p { color: var(--muted); line-height: 1.55; }
+.combined-monitor { min-height: 0; }
+.focus-signals { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin: 0 0 24px; }
+.signal-card { min-height: 150px; display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.025); }
+.signal-card .eyebrow, .signal-card strong { display: block; }
+.signal-card strong { font-size: 1.35rem; letter-spacing: -.04em; }
+.signal-card p { margin: 0; color: var(--muted); font-size: .83rem; line-height: 1.45; }
+.signal-card.violation, .signal-card.lost { border-color: rgba(255,107,95,.45); background: rgba(255,107,95,.07); }
+.signal-card.focused { border-color: rgba(102,242,180,.25); }
+.signal-card.degraded { border-color: rgba(255,198,92,.38); }
+.signal-card.camera { display: grid; grid-template-columns: minmax(0, 1fr) 110px; align-items: center; }
+.focus-preview { width: 110px; aspect-ratio: 1; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #050605; }
+.focus-preview video { display: block; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
 .fine { color: var(--muted); font-size: .76rem; line-height: 1.45; }
 .policy-list, .member-list { display: grid; gap: 10px; margin-top: 16px; }
 .policy-chip { padding: 10px 12px; background: rgba(216,255,71,.07); color: #e9ff9b; border: 1px solid rgba(216,255,71,.16); border-radius: 10px; font-size: .84rem; word-break: break-word; }
@@ -108,7 +120,7 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
 .step::before { counter-increment: steps; content: counter(steps); width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--acid); color: #11150b; font-weight: 850; }
 
 @media (max-width: 800px) {
-  .hero, .session-layout, .camera-content { grid-template-columns: 1fr; }
+  .hero, .session-layout, .camera-content, .focus-signals { grid-template-columns: 1fr; }
   .hero { gap: 36px; }
   .stake-card { transform: none; }
   .form-card, .aside-card { grid-column: 1 / -1; }

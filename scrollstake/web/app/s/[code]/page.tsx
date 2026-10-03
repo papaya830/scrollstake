@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import ScreenMonitor from "@/components/ScreenMonitor";
-import CameraMonitor from "@/components/CameraMonitor";
+import FocusMonitor from "@/components/FocusMonitor";
 import SessionAdminPanel from "@/components/SessionAdminPanel";
 import { loadAuth, policyKey, type SessionAuth, type SessionView } from "@/components/session-client";
 
@@ -79,26 +78,16 @@ export default function SessionPage() {
           <div>
             <SessionAdminPanel session={session} auth={auth} onRefresh={refresh} />
             {status === "lobby" ? null : allowedResources.length > 0 && auth.clientToken ? (
-              <>
-                <ScreenMonitor
-                  code={code}
-                  wallet={auth.wallet}
-                  clientToken={auth.clientToken}
-                  allowedResources={allowedResources}
-                  graceSeconds={session.monitoringPolicy?.graceSeconds ?? 10}
-                  sampleIntervalSeconds={session.monitoringPolicy?.sampleIntervalSeconds ?? 3}
-                  ended={status === "ended" || scheduledEndReached}
-                  onEvent={refresh}
-                />
-                <CameraMonitor
-                  code={code}
-                  wallet={auth.wallet}
-                  clientToken={auth.clientToken}
-                  graceSeconds={session.monitoringPolicy?.graceSeconds ?? 10}
-                  ended={status === "ended" || scheduledEndReached}
-                  onEvent={refresh}
-                />
-              </>
+              <FocusMonitor
+                code={code}
+                wallet={auth.wallet}
+                clientToken={auth.clientToken}
+                allowedResources={allowedResources}
+                graceSeconds={session.monitoringPolicy?.graceSeconds ?? 10}
+                sampleIntervalSeconds={session.monitoringPolicy?.sampleIntervalSeconds ?? 3}
+                ended={status === "ended" || scheduledEndReached}
+                onEvent={refresh}
+              />
             ) : (
               <section className="card monitor">
                 <div className="monitor-main">
