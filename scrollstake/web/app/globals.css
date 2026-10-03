@@ -76,6 +76,14 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
 .monitor-main p { color: var(--muted); line-height: 1.6; max-width: 520px; }
 .countdown { color: var(--danger); }
 .monitor-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 18px; }
+.camera-monitor { min-height: 0; margin-top: 18px; }
+.camera-content { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(0, 1.2fr); align-items: center; gap: 20px; margin: 24px 0; }
+.camera-preview { aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: #050605; }
+.camera-preview video { display: block; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.camera-preview video.camera-video-hidden { display: none; }
+.camera-placeholder { display: grid; width: 100%; height: 100%; place-items: center; color: var(--muted); font-size: 2.6rem; }
+.camera-copy strong { display: block; font-size: clamp(2rem, 4vw, 3.4rem); letter-spacing: -.06em; line-height: 1; }
+.camera-copy p { color: var(--muted); line-height: 1.55; }
 .fine { color: var(--muted); font-size: .76rem; line-height: 1.45; }
 .policy-list, .member-list { display: grid; gap: 10px; margin-top: 16px; }
 .policy-chip { padding: 10px 12px; background: rgba(216,255,71,.07); color: #e9ff9b; border: 1px solid rgba(216,255,71,.16); border-radius: 10px; font-size: .84rem; word-break: break-word; }
@@ -100,7 +108,7 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
 .step::before { counter-increment: steps; content: counter(steps); width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--acid); color: #11150b; font-weight: 850; }
 
 @media (max-width: 800px) {
-  .hero, .session-layout { grid-template-columns: 1fr; }
+  .hero, .session-layout, .camera-content { grid-template-columns: 1fr; }
   .hero { gap: 36px; }
   .stake-card { transform: none; }
   .form-card, .aside-card { grid-column: 1 / -1; }
