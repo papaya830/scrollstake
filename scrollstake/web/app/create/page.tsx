@@ -4,8 +4,9 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseResources, policyKey, storeAuth } from "@/components/session-client";
+import { DEFAULT_APPROVED_RESOURCES } from "@/components/screen-policy";
 
-const STARTER_RESOURCES = "canvas.ubc.ca\ndocs.google.com\nnotion.so\nVS Code\nCourse lecture slides";
+const STARTER_RESOURCES = DEFAULT_APPROVED_RESOURCES.join("\n");
 
 export default function CreateSessionPage() {
   const router = useRouter();
@@ -78,7 +79,7 @@ export default function CreateSessionPage() {
           <div className="field">
             <label htmlFor="resources">Approved study resources</label>
             <textarea className="input" id="resources" name="resources" defaultValue={STARTER_RESOURCES} required />
-            <span className="fine">One domain, app, or recognizable course resource per line. Specific entries reduce false positives.</span>
+            <span className="fine">One domain, app, or recognizable course resource per line. Add your course or project name before the demo.</span>
           </div>
           {error && <p className="error" role="alert">{error}</p>}
           <button className="button primary" disabled={busy}>{busy ? "Creating…" : "Create session"}</button>
