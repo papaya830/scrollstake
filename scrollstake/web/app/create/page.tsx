@@ -31,6 +31,7 @@ export default function CreateSessionPage() {
           stakeUsdc: Number(data.get("stake")),
           penaltyUsdc: Number(data.get("penalty")),
           lives: Number(data.get("lives")),
+          durationMinutes: Number(data.get("duration")),
           allowedResources,
         }),
       });
@@ -42,8 +43,8 @@ export default function CreateSessionPage() {
         body: JSON.stringify({ code, wallet, name }),
       });
       if (!joined.ok) throw new Error("Session created, but the creator could not join.");
-      const result = await joined.json() as { clientToken: string };
-      storeAuth(code, { wallet, name, clientToken: result.clientToken });
+      const result = await joined.json() as { clientToken?: string; membershipStatus?: "pending" | "approved" };
+      storeAuth(code, { wallet, name, clientToken: result.clientToken, membershipStatus: result.membershipStatus ?? "approved" });
       sessionStorage.setItem(policyKey(code), JSON.stringify(allowedResources));
       router.push(`/s/${code}`);
     } catch (cause) {
@@ -73,6 +74,7 @@ export default function CreateSessionPage() {
             <div className="field"><label htmlFor="penalty">Penalty</label><input className="input" id="penalty" name="penalty" type="number" min="0.1" step="0.1" defaultValue="0.5" required /></div>
             <div className="field"><label htmlFor="lives">Free passes</label><input className="input" id="lives" name="lives" type="number" min="0" max="10" defaultValue="2" required /></div>
           </div>
+          <div className="field"><label htmlFor="duration">Study duration</label><select className="input" id="duration" name="duration" defaultValue="50"><option value="25">25 minutes</option><option value="50">50 minutes</option><option value="90">90 minutes</option><option value="120">120 minutes</option></select><span className="fine">The creator starts this timer once every approved member has funded their stake.</span></div>
           <div className="field">
             <label htmlFor="resources">Approved study resources</label>
             <textarea className="input" id="resources" name="resources" defaultValue={STARTER_RESOURCES} required />

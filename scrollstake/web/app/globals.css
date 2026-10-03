@@ -83,6 +83,18 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
 .member-head { display: flex; justify-content: space-between; gap: 10px; font-weight: 750; }
 .member-stats { display: flex; gap: 14px; margin-top: 9px; color: var(--muted); font-size: .8rem; }
 .event-toast { margin-top: 14px; padding: 12px; border-radius: 11px; border: 1px solid rgba(102,242,180,.2); background: rgba(102,242,180,.07); font-size: .85rem; }
+.admin-panel { margin-bottom: 18px; }
+.admin-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 22px 0; }
+.admin-summary > div { border: 1px solid var(--line); background: rgba(255,255,255,.03); border-radius: 12px; padding: 12px; display: grid; gap: 5px; }
+.admin-summary span, .admin-row span { color: var(--muted); font-size: .76rem; }
+.admin-summary strong { font-size: 1.05rem; }
+.admin-list { display: grid; gap: 9px; margin: 20px 0; }
+.admin-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; }
+.admin-row > div:first-child { display: grid; gap: 4px; min-width: 0; }
+.admin-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+.row-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.row-actions .button, .admin-row > .button { padding: 8px 11px; font-size: .78rem; }
+.lobby-state h2 { margin-bottom: 8px; }
 .steps { counter-reset: steps; display: grid; gap: 20px; }
 .step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; color: var(--muted); line-height: 1.5; }
 .step::before { counter-increment: steps; content: counter(steps); width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--acid); color: #11150b; font-weight: 850; }
@@ -93,5 +105,7 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
   .stake-card { transform: none; }
   .form-card, .aside-card { grid-column: 1 / -1; }
   .field-row { grid-template-columns: 1fr; }
+  .admin-summary { grid-template-columns: 1fr; }
+  .admin-row { align-items: flex-start; flex-direction: column; }
   .page-head { align-items: flex-start; flex-direction: column; }
 }

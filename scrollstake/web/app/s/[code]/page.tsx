@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import ScreenMonitor from "@/components/ScreenMonitor";
+import SessionAdminPanel from "@/components/SessionAdminPanel";
 import { loadAuth, policyKey, type SessionAuth, type SessionView } from "@/components/session-client";
 
 export default function SessionPage() {
@@ -42,6 +43,8 @@ export default function SessionPage() {
     () => session?.monitoringPolicy?.allowedResources?.length ? session.monitoringPolicy.allowedResources : localPolicy,
     [localPolicy, session?.monitoringPolicy?.allowedResources],
   );
+  const status = session?.status ?? "live"; // Legacy API sessions remain usable until lifecycle endpoints land.
+  const scheduledEndReached = Boolean(session?.endsAt && Date.now() >= session.endsAt);
 
   if (!auth) {
     return (
@@ -64,7 +67,7 @@ export default function SessionPage() {
         <span className="eyebrow">Room {code}</span>
       </nav>
       <header className="page-head">
-        <div><span className="eyebrow">Live study room</span><h1>Stay expensive.</h1></div>
+        <div><span className="eyebrow">{status === "lobby" ? "Session lobby" : status === "ended" || scheduledEndReached ? "Session complete" : "Live study room"}</span><h1>{status === "lobby" ? "Build the room." : status === "ended" || scheduledEndReached ? "Time is up." : "Stay expensive."}</h1></div>
         <div style={{ textAlign: "right" }}><div className="muted">Signed in as</div><strong>{auth.name}</strong></div>
       </header>
       {error && <p className="notice" role="alert">{error}</p>}
@@ -73,7 +76,8 @@ export default function SessionPage() {
       ) : (
         <div className="session-layout">
           <div>
-            {allowedResources.length > 0 ? (
+            <SessionAdminPanel session={session} auth={auth} onRefresh={refresh} />
+            {status === "lobby" ? null : allowedResources.length > 0 && auth.clientToken ? (
               <ScreenMonitor
                 code={code}
                 wallet={auth.wallet}
@@ -81,15 +85,15 @@ export default function SessionPage() {
                 allowedResources={allowedResources}
                 graceSeconds={session.monitoringPolicy?.graceSeconds ?? 10}
                 sampleIntervalSeconds={session.monitoringPolicy?.sampleIntervalSeconds ?? 3}
-                ended={Boolean(session.endedAt)}
+                ended={status === "ended" || scheduledEndReached}
                 onEvent={refresh}
               />
             ) : (
               <section className="card monitor">
                 <div className="monitor-main">
-                  <strong>Policy pending</strong>
-                  <p>The creator&apos;s allowlist is not available from the session API yet. Monitoring stays off so an unknown policy cannot cost you money.</p>
-                  <div className="notice">Dev D needs to return <code>monitoringPolicy.allowedResources</code> from the session endpoints.</div>
+                  <strong>{auth.clientToken ? "Policy pending" : "Approval pending"}</strong>
+                  <p>{auth.clientToken ? "The creator&apos;s allowlist is not available from the session API yet. Monitoring stays off so an unknown policy cannot cost you money." : "The creator must approve your request before a monitoring token is issued."}</p>
+                  <div className="notice">The lifecycle API must return approved membership and <code>monitoringPolicy.allowedResources</code> before monitoring can start.</div>
                 </div>
               </section>
             )}

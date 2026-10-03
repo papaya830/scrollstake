@@ -25,9 +25,9 @@ function JoinSessionForm() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ code, wallet, name }),
       });
-      const result = await response.json() as { clientToken?: string; error?: string };
-      if (!response.ok || !result.clientToken) throw new Error(result.error ?? "Could not join that session.");
-      storeAuth(code, { wallet, name, clientToken: result.clientToken });
+      const result = await response.json() as { clientToken?: string; membershipStatus?: "pending" | "approved"; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Could not join that session.");
+      storeAuth(code, { wallet, name, clientToken: result.clientToken, membershipStatus: result.membershipStatus ?? (result.clientToken ? "approved" : "pending") });
       router.push(`/s/${code}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong.");
@@ -43,7 +43,7 @@ function JoinSessionForm() {
       </nav>
       <header className="page-head">
         <div><span className="eyebrow">Enter the room</span><h1>Lock in.</h1></div>
-        <p className="lede">Your client token stays in this browser tab and authenticates distraction events.</p>
+        <p className="lede">The creator approves lobby requests before a member can fund a stake or receive a monitoring token.</p>
       </header>
       <form className="grid" onSubmit={submit}>
         <section className="card form-card">
