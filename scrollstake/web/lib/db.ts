@@ -2,8 +2,12 @@ import { Pool } from "pg";
 
 // Optional Postgres (Tiger Data). If DATABASE_URL is unset we just log to the console.
 let pool: Pool | null = null;
+// A configured database can still be unreachable (common in frontend-only deploys).
+// Once a query fails, keep the request path on the in-memory fallback instead of
+// repeatedly turning every API call into a 500.
+const dbState = globalThis as typeof globalThis & { __scrollstakeDatabaseUnavailable?: boolean };
 const databaseUrl = () => process.env.DATABASE_URL ?? process.env.TIMESCALE_SERVICE_URL;
-export const databaseEnabled = () => Boolean(databaseUrl());
+export const databaseEnabled = () => Boolean(databaseUrl()) && !dbState.__scrollstakeDatabaseUnavailable;
 function getPool(): Pool | null {
   const connectionString = databaseUrl();
   if (!connectionString) return null;
@@ -19,7 +23,13 @@ function getPool(): Pool | null {
 export async function dbQuery(text: string, values: unknown[] = []) {
   const active = getPool();
   if (!active) throw new Error("DATABASE_URL is required for database queries");
-  return active.query(text, values);
+  try {
+    return await active.query(text, values);
+  } catch (error) {
+    dbState.__scrollstakeDatabaseUnavailable = true;
+    console.error("[db] database disabled after query failure", error);
+    throw error;
+  }
 }
 
 export type LoggedEvent = {

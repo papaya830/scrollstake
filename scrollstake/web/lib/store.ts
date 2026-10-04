@@ -36,7 +36,11 @@ export async function createSession(input: SessionInput): Promise<Session> {
   // Safe default: deployments must explicitly opt into sending transactions.
   const session: InternalSession = { code, creatorWallet: input.creatorWallet, stakeUsdc: input.stakeUsdc, penaltyUsdc: input.penaltyUsdc, lives: input.lives, createdAt: Date.now(), members: [], tokens: {}, status: "lobby", durationMinutes, chainReady: process.env.SOLANA_DRY_RUN !== "0", monitoringPolicy: policy };
   if (!databaseEnabled()) { sessions.set(code, session); return publicView(session); }
-  await dbQuery(`INSERT INTO sessions (code, creator_wallet, stake_usdc, penalty_usdc, lives, created_at, status, duration_minutes, chain_ready, allowed_resources, grace_seconds, sample_interval_seconds) VALUES ($1,$2,$3,$4,$5,to_timestamp($6 / 1000.0),$7,$8,$9,$10::jsonb,$11,$12)`, [code, input.creatorWallet, input.stakeUsdc, input.penaltyUsdc, input.lives, session.createdAt, "lobby", durationMinutes, session.chainReady, JSON.stringify(policy.allowedResources), policy.graceSeconds, policy.sampleIntervalSeconds]);
+  try {
+    await dbQuery(`INSERT INTO sessions (code, creator_wallet, stake_usdc, penalty_usdc, lives, created_at, status, duration_minutes, chain_ready, allowed_resources, grace_seconds, sample_interval_seconds) VALUES ($1,$2,$3,$4,$5,to_timestamp($6 / 1000.0),$7,$8,$9,$10::jsonb,$11,$12)`, [code, input.creatorWallet, input.stakeUsdc, input.penaltyUsdc, input.lives, session.createdAt, "lobby", durationMinutes, session.chainReady, JSON.stringify(policy.allowedResources), policy.graceSeconds, policy.sampleIntervalSeconds]);
+  } catch {
+    sessions.set(code, session);
+  }
   return publicView(session);
 }
 async function readSession(code: string): Promise<Session | undefined> {
