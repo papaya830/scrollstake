@@ -94,7 +94,11 @@ export async function updateMembership(code: string, actorWallet: string, wallet
 }
 export async function markDeposit(code: string, wallet: string, txSig: string) {
   const session = await getSession(code), member = session?.members.find((item) => item.wallet === wallet);
-  if (!session || session.status !== "lobby" || !session.chainReady || !member || member.membershipStatus !== "approved" || !txSig) return undefined;
+  // A session created while real-chain mode was configured may not have a verified
+  // group transaction. In dry-run mode a receipt is intentionally off-chain, so
+  // allow that session to continue as a demo after switching modes.
+  const requiresVerifiedGroup = process.env.SOLANA_DRY_RUN === "0";
+  if (!session || session.status !== "lobby" || (requiresVerifiedGroup && !session.chainReady) || !member || member.membershipStatus !== "approved" || !txSig) return undefined;
   const now = Date.now();
   if (databaseEnabled()) await dbQuery("UPDATE session_members SET deposited_at = to_timestamp($1 / 1000.0), deposit_tx = $2 WHERE code = $3 AND wallet = $4", [now, txSig, code.toUpperCase(), wallet]);
   else { const mutable = sessions.get(code.toUpperCase())!.members.find((item) => item.wallet === wallet)!; mutable.depositedAt = now; mutable.depositTx = txSig; }
