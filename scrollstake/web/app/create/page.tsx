@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseResources, policyKey, storeAuth } from "@/components/session-client";
 import { DEFAULT_APPROVED_RESOURCES } from "@/components/screen-policy";
+import { createGroupOnChain } from "@/lib/solana-client";
 
 const STARTER_RESOURCES = DEFAULT_APPROVED_RESOURCES.join("\n");
 
@@ -38,6 +39,14 @@ export default function CreateSessionPage() {
       });
       if (!created.ok) throw new Error("Could not create the session.");
       const { code } = await created.json() as { code: string };
+      // In real-chain mode, establish and verify the room PDA before accepting funding.
+      const chainConfig = await fetch("/api/chain/config", { cache: "no-store" });
+      if (chainConfig.ok) {
+        const chain = await createGroupOnChain(code);
+        if (chain.wallet !== wallet) throw new Error("The connected wallet must match the creator wallet.");
+        const verified = await fetch(`/api/sessions/${encodeURIComponent(code)}/chain`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ actorWallet: wallet, txSig: chain.txSig }) });
+        if (!verified.ok) throw new Error("The group was created but could not be verified. Do not deposit; retry session setup.");
+      }
       const joined = await fetch("/api/sessions/join", {
         method: "POST",
         headers: { "content-type": "application/json" },

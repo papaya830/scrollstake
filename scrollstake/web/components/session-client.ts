@@ -26,10 +26,12 @@ export type SessionView = {
   endsAt?: number;
   endedAt?: number;
   endReason?: string;
+  chainReady?: boolean;
+  groupTx?: string;
   monitoringPolicy?: { allowedResources: string[]; graceSeconds?: number; sampleIntervalSeconds?: number };
 };
 
-export type SessionAuth = { wallet: string; name: string; clientToken?: string; membershipStatus?: "pending" | "approved" };
+export type SessionAuth = { wallet: string; name: string; clientToken?: string; membershipStatus?: "pending" | "approved" | "rejected" | "removed" };
 
 export const authKey = (code: string) => `scrollstake:${code.toUpperCase()}:auth`;
 export const policyKey = (code: string) => `scrollstake:${code.toUpperCase()}:policy`;
@@ -49,4 +51,10 @@ export function loadAuth(code: string): SessionAuth | null {
 
 export function parseResources(value: string): string[] {
   return [...new Set(value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean))].slice(0, 30);
+}
+
+export function formatTimeRemaining(endsAt: number | undefined, now = Date.now()): string | null {
+  if (endsAt === undefined) return null;
+  const seconds = Math.max(0, Math.ceil((endsAt - now) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }

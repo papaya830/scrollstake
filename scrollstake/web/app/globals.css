@@ -115,6 +115,15 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
 .row-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .row-actions .button, .admin-row > .button { padding: 8px 11px; font-size: .78rem; }
 .lobby-state h2 { margin-bottom: 8px; }
+.focus-pulse { margin-bottom: 18px; }
+.focus-pulse h2 { font-size: 1.55rem; letter-spacing: -.04em; }
+.pulse-bars { height: 105px; display: flex; align-items: flex-end; gap: 4px; margin: 22px 0 16px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.pulse-bar { flex: 1; min-width: 5px; height: 100%; display: flex; flex-direction: column-reverse; overflow: hidden; border-radius: 4px 4px 0 0; background: rgba(255,255,255,.04); }
+.pulse-focus { min-height: 2px; background: var(--mint); }
+.pulse-distraction { min-height: 0; background: var(--danger); }
+.pulse-members { display: grid; gap: 8px; }
+.pulse-member { display: grid; grid-template-columns: minmax(90px, .7fr) 1fr 1.25fr; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: .78rem; }
+.pulse-member span { color: var(--muted); }
 .steps { counter-reset: steps; display: grid; gap: 20px; }
 .step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; color: var(--muted); line-height: 1.5; }
 .step::before { counter-increment: steps; content: counter(steps); width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--acid); color: #11150b; font-weight: 850; }
@@ -127,5 +136,6 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
   .field-row { grid-template-columns: 1fr; }
   .admin-summary { grid-template-columns: 1fr; }
   .admin-row { align-items: flex-start; flex-direction: column; }
+  .pulse-member { grid-template-columns: 1fr; gap: 3px; }
   .page-head { align-items: flex-start; flex-direction: column; }
 }

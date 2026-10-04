@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import FocusMonitor from "@/components/FocusMonitor";
+import FocusPulse from "@/components/FocusPulse";
 import SessionAdminPanel from "@/components/SessionAdminPanel";
-import { loadAuth, policyKey, type SessionAuth, type SessionView } from "@/components/session-client";
+import { formatTimeRemaining, loadAuth, policyKey, storeAuth, type SessionAuth, type SessionView } from "@/components/session-client";
+
+const cachedSessionKey = (code: string) => `scrollstake:${code.toUpperCase()}:session`;
 
 export default function SessionPage() {
   const params = useParams<{ code: string }>();
@@ -14,14 +17,47 @@ export default function SessionPage() {
   const [auth, setAuth] = useState<SessionAuth | null>(null);
   const [localPolicy, setLocalPolicy] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const tokenRequestInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
       const response = await fetch(`/api/sessions/${encodeURIComponent(code)}`, { cache: "no-store" });
       if (!response.ok) throw new Error(response.status === 404 ? "Session not found." : "Could not refresh the session.");
-      setSession(await response.json() as SessionView);
+      const view = await response.json() as SessionView;
+      setSession(view);
+      sessionStorage.setItem(cachedSessionKey(code), JSON.stringify(view));
+      const stored = loadAuth(code);
+      const own = stored ? view.members.find((member) => member.wallet === stored.wallet) : undefined;
+      if (stored && own && own.membershipStatus !== stored.membershipStatus) {
+        const next = { ...stored, membershipStatus: own.membershipStatus };
+        storeAuth(code, next);
+        setAuth(next);
+      }
+      if (stored && own?.membershipStatus === "approved" && !stored.clientToken && !tokenRequestInFlight.current) {
+        tokenRequestInFlight.current = true;
+        try {
+          const tokenResponse = await fetch(`/api/sessions/${encodeURIComponent(code)}/members/${encodeURIComponent(stored.wallet)}/token`, { method: "POST" });
+          if (tokenResponse.ok) {
+            const token = await tokenResponse.json() as { clientToken: string; membershipStatus: "approved" };
+            const next = { ...stored, clientToken: token.clientToken, membershipStatus: token.membershipStatus };
+            storeAuth(code, next);
+            setAuth(next);
+          }
+        } finally {
+          tokenRequestInFlight.current = false;
+        }
+      }
       setError("");
     } catch (cause) {
+      try {
+        const cached = sessionStorage.getItem(cachedSessionKey(code));
+        if (cached) {
+          setSession(JSON.parse(cached) as SessionView);
+          setError("Backend unavailable — showing this browser's last saved session. Funding, room changes, and slashes are disabled until it reconnects.");
+          return;
+        }
+      } catch { /* cache is optional */ }
       setError(cause instanceof Error ? cause.message : "Could not load the session.");
     }
   }, [code]);
@@ -36,15 +72,17 @@ export default function SessionPage() {
     }
     void refresh();
     const interval = setInterval(() => void refresh(), 2000);
-    return () => clearInterval(interval);
+    const clock = setInterval(() => setNow(Date.now()), 1000);
+    return () => { clearInterval(interval); clearInterval(clock); };
   }, [code, refresh]);
 
   const allowedResources = useMemo(
     () => session?.monitoringPolicy?.allowedResources?.length ? session.monitoringPolicy.allowedResources : localPolicy,
     [localPolicy, session?.monitoringPolicy?.allowedResources],
   );
-  const status = session?.status ?? "live"; // Legacy API sessions remain usable until lifecycle endpoints land.
-  const scheduledEndReached = Boolean(session?.endsAt && Date.now() >= session.endsAt);
+  const status = session?.status ?? "lobby";
+  const scheduledEndReached = Boolean(session?.endsAt && now >= session.endsAt);
+  const timeRemaining = formatTimeRemaining(session?.endsAt, now);
 
   if (!auth) {
     return (
@@ -68,7 +106,7 @@ export default function SessionPage() {
       </nav>
       <header className="page-head">
         <div><span className="eyebrow">{status === "lobby" ? "Session lobby" : status === "ended" || scheduledEndReached ? "Session complete" : "Live study room"}</span><h1>{status === "lobby" ? "Build the room." : status === "ended" || scheduledEndReached ? "Time is up." : "Stay expensive."}</h1></div>
-        <div style={{ textAlign: "right" }}><div className="muted">Signed in as</div><strong>{auth.name}</strong></div>
+        <div style={{ textAlign: "right" }}><div className="muted">{timeRemaining && status === "live" ? `Time left · ${timeRemaining}` : "Signed in as"}</div><strong>{timeRemaining && status === "live" ? auth.name : auth.name}</strong></div>
       </header>
       {error && <p className="notice" role="alert">{error}</p>}
       {!session ? (
@@ -77,6 +115,7 @@ export default function SessionPage() {
         <div className="session-layout">
           <div>
             <SessionAdminPanel session={session} auth={auth} onRefresh={refresh} />
+            <FocusPulse code={code} live={status === "live" && !scheduledEndReached} />
             {status === "lobby" ? null : allowedResources.length > 0 && auth.clientToken ? (
               <FocusMonitor
                 code={code}
