@@ -8,6 +8,13 @@ let pool: Pool | null = null;
 const dbState = globalThis as typeof globalThis & { __scrollstakeDatabaseUnavailable?: boolean };
 const databaseUrl = () => process.env.DATABASE_URL ?? process.env.TIMESCALE_SERVICE_URL;
 export const databaseEnabled = () => Boolean(databaseUrl()) && !dbState.__scrollstakeDatabaseUnavailable;
+/**
+ * Serverless function memory is not shared between Vercel invocations. Keep it
+ * for local development and unit tests, but never let it impersonate a shared
+ * room in a deployed app. SCROLLSTAKE_ALLOW_MEMORY_STORE is an escape hatch for
+ * a deliberately single-instance preview only.
+ */
+export const persistentDatabaseRequired = () => process.env.VERCEL === "1" && process.env.SCROLLSTAKE_ALLOW_MEMORY_STORE !== "1";
 function getPool(): Pool | null {
   const connectionString = databaseUrl();
   if (!connectionString) return null;

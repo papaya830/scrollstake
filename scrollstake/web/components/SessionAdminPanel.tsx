@@ -49,6 +49,16 @@ export default function SessionAdminPanel({ session, auth, onRefresh }: Props) {
     void request("end", undefined, reason);
   }
 
+  async function copyInviteLink() {
+    const inviteUrl = `${window.location.origin}/s/${encodeURIComponent(session.code)}`;
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setMessage("Invite link copied. Send it to your study group.");
+    } catch {
+      setMessage(`Copy this invite link: ${inviteUrl}`);
+    }
+  }
+
   if (session.status === "ended") return <section className="card"><span className="eyebrow">Session complete</span><h2 style={{ marginBottom: 8 }}>Withdraw your remaining stake.</h2><p className="muted">{session.endReason ? `Ended: ${session.endReason}` : "The scheduled study timer has finished."}</p>{session.groupTx && <button className="button primary" disabled={busy !== null} onClick={() => { setBusy("deposit"); setMessage(""); void withdrawOnChain(session.code).then(() => setMessage("Withdrawal confirmed on devnet.")).catch((cause: unknown) => setMessage(cause instanceof Error ? cause.message : "Withdrawal failed.")).finally(() => setBusy(null)); }}>{busy === "deposit" ? "Withdrawing…" : "Withdraw remaining stake"}</button>}{message && <p className={message.includes("failed") ? "error" : "event-toast"}>{message}</p>}</section>;
   if (session.status === "live") return isCreator
     ? <section className="card admin-panel"><span className="eyebrow">Creator controls</span><h2 style={{ margin: "8px 0" }}>Room is live.</h2><p className="muted">Ending stops monitoring for everyone and unlocks withdrawals.</p>{message && <p className={message.includes("could not") || message.includes("cannot") ? "error" : "event-toast"}>{message}</p>}<button className="button danger" disabled={busy !== null} onClick={requestEnd}>{busy === "end" ? "Ending…" : "End session"}</button></section>
@@ -64,6 +74,7 @@ export default function SessionAdminPanel({ session, auth, onRefresh }: Props) {
   return <section className="card admin-panel">
     <div className="monitor-top"><div><span className="eyebrow">Creator controls</span><h2 style={{ margin: "8px 0 0" }}>Build the room.</h2></div><span className="status-pill"><span className="status-dot" />lobby</span></div>
     <div className="admin-summary"><div><span>Timer</span><strong>{duration} min</strong></div><div><span>Approved</span><strong>{approved.length}</strong></div><div><span>Funded</span><strong>{approved.length - unfunded.length}/{approved.length}</strong></div></div>
+    <button className="button" disabled={busy !== null} onClick={() => void copyInviteLink()}>Copy invite link</button>
     {pending.length > 0 && <div className="admin-list"><span className="eyebrow">Join requests</span>{pending.map((member) => <div className="admin-row" key={member.wallet}><div><strong>{member.name}</strong><span>{member.wallet}</span></div><div className="row-actions"><button className="button primary" disabled={busy !== null} onClick={() => void request("approve", member)}>Approve</button><button className="button" disabled={busy !== null} onClick={() => void request("reject", member)}>Decline</button></div></div>)}</div>}
     <div className="admin-list"><span className="eyebrow">Approved members</span>{approved.map((member) => <div className="admin-row" key={member.wallet}><div><strong>{member.name}{member.wallet === session.creatorWallet ? " · creator" : ""}</strong><span>{member.depositedAt ? "Demo stake funded" : "Deposit pending"}</span></div><div className="row-actions">{member.wallet === auth.wallet && !member.depositedAt && <button className="button primary" disabled={busy !== null} onClick={() => void request("deposit", member)}>{busy === "deposit" ? "Funding…" : "Fund demo stake"}</button>}{!member.depositedAt && member.wallet !== session.creatorWallet && <button className="button" disabled={busy !== null} onClick={() => void request("remove", member)}>Remove</button>}</div></div>)}</div>
     <p className="fine">{startCopy} Demo funding does not move USDC. Starting locks membership, terms, approved resources, and the timer.</p>

@@ -26,6 +26,19 @@ beforeEach(() => {
 
 afterEach(() => resetMemoryStoreForTests());
 
+describe("deployment persistence guard", () => {
+  it("does not create an isolated in-memory room on Vercel without Postgres", async () => {
+    const originalVercel = process.env.VERCEL;
+    process.env.VERCEL = "1";
+    try {
+      await expect(createSession({ creatorWallet: creator, stakeUsdc: 5, penaltyUsdc: 0.5, lives: 2 })).rejects.toThrow("Shared sessions need DATABASE_URL");
+    } finally {
+      if (originalVercel === undefined) delete process.env.VERCEL;
+      else process.env.VERCEL = originalVercel;
+    }
+  });
+});
+
 describe("two-participant session lifecycle", () => {
   it("keeps creator and member state synchronized while enforcing permissions", async () => {
     const created = await createSession({ creatorWallet: creator, stakeUsdc: 10, penaltyUsdc: 0.5, lives: 1, durationMinutes: 25, allowedResources: ["Canvas", "GitHub"] });
