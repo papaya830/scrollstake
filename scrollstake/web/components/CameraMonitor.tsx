@@ -2,11 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FaceLandmarker } from "@mediapipe/tasks-vision";
+import { reportCameraDistraction, type CameraReportTarget } from "./camera-report";
 
 type CameraState = "idle" | "requesting" | "calibrating" | "monitoring" | "distracted" | "lost" | "ended" | "degraded";
 type Landmark = { x: number; y: number; z: number };
-type Props = { code: string; wallet: string; clientToken: string; graceSeconds?: number; ended?: boolean; onEvent?: () => void };
-type EventResponse = { status: "forgiven" | "slashed" | "ignored" | "error"; livesLeft?: number; strikes?: number; error?: string };
+// Either a session (events go to /api/events) or onDistraction (local only, used by /preview).
+type Props = { graceSeconds?: number; ended?: boolean; onEvent?: () => void } & (
+  | { code: string; wallet: string; clientToken: string; onDistraction?: undefined }
+  | { onDistraction: (reason: string, durationSec: number) => void; code?: undefined; wallet?: undefined; clientToken?: undefined }
+);
 
 const CALIBRATION_MS = 3_000;
 const SAMPLE_MS = 200;
@@ -54,7 +58,7 @@ async function loadFaceLandmarker() {
 }
 
 /** Local-only MediaPipe look-down detector. Camera frames never leave the browser. */
-export default function CameraMonitor({ code, wallet, clientToken, graceSeconds = 10, ended = false, onEvent }: Props) {
+export default function CameraMonitor({ code, wallet, clientToken, onDistraction, graceSeconds = 10, ended = false, onEvent }: Props) {
   const [state, setState] = useState<CameraState>(ended ? "ended" : "idle");
   const [detail, setDetail] = useState("Camera is off");
   const [countdown, setCountdown] = useState(graceSeconds);
@@ -91,19 +95,13 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
     if (reportingRef.current) return;
     reportingRef.current = true;
     try {
-      const response = await fetch("/api/events", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-client-token": clientToken },
-        body: JSON.stringify({ code, wallet, type: "distraction", source: "camera", reason, category: "camera", confidence: 0.9, durationSec: Math.round(durationSec * 10) / 10, ts: Math.floor(Date.now() / 1000) }),
-      });
-      const body = await response.json() as EventResponse;
-      if (!response.ok || body.status === "error") throw new Error(body.error ?? "The event API rejected the camera report.");
-      setEventResult(body.status === "slashed" ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}` : body.status === "forgiven" ? `Free pass used · ${body.livesLeft ?? 0} left` : "Duplicate event ignored");
+      const target: CameraReportTarget = onDistraction ? { onDistraction } : { code: code!, wallet: wallet!, clientToken: clientToken! };
+      setEventResult(await reportCameraDistraction(target, reason, durationSec));
       onEvent?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not report the camera interruption.");
     }
-  }, [clientToken, code, onEvent, wallet]);
+  }, [clientToken, code, onDistraction, onEvent, wallet]);
 
   const resetFocus = useCallback(() => {
     distractionSinceRef.current = null;

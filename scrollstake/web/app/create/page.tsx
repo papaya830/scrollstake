@@ -67,7 +67,10 @@ export default function CreateSessionPage() {
     <main className="shell page">
       <nav className="nav">
         <Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link>
-        <Link className="button" href="/join">Join instead</Link>
+        <div className="actions" style={{ marginTop: 0 }}>
+          <Link className="button" href="/preview">Try a preview (free)</Link>
+          <Link className="button" href="/join">Join instead</Link>
+        </div>
       </nav>
       <header className="page-head">
         <div><span className="eyebrow">New focus room</span><h1>Set the stakes.</h1></div>
