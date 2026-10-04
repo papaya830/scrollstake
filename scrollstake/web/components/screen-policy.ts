@@ -17,14 +17,15 @@ const BLOCKED: Array<{ category: ScreenCategory; terms: string[] }> = [
   { category: "games", terms: ["roblox", "fortnite", "miniclip", "epic games", "league of legends", "minecraft", "valorant"] },
 ];
 
-export const DEFAULT_APPROVED_RESOURCES = [
-  "scrollstake",
-  "localhost",
-  "Visual Studio Code",
-  "GitHub",
-  "canvas.ubc.ca",
-  "docs.google.com",
-  "notion.so",
+export const DEFAULT_BLOCKED_SITES = [
+  "instagram",
+  "tiktok",
+  "facebook",
+  "youtube",
+  "netflix",
+  "amazon prime video",
+  "disney plus",
+  "amazon shopping",
 ];
 
 const NATIVE_APP_TITLES: Array<{ title: string; category: ScreenCategory }> = [
@@ -52,18 +53,18 @@ function containsWholePhrase(haystack: string, phrase: string): boolean {
   return new RegExp(`(^|[^a-z0-9])${escapeRegex(needle)}(?=$|[^a-z0-9])`, "i").test(haystack);
 }
 
-export function classifyOcrText(text: string, allowedResources: string[]): DetectionResult | null {
+export function classifyOcrText(text: string, blockedSites: string[]): DetectionResult | null {
   const haystack = normalize(text);
   if (!haystack) return null;
 
-  for (const resource of allowedResources) {
+  for (const resource of blockedSites) {
     if (containsWholePhrase(haystack, resource)) {
       return {
-        classification: "allowed",
-        category: "study",
+        classification: "disallowed",
+        category: "other",
         confidence: 0.98,
         matchedResource: resource,
-        reason: `Approved resource detected: ${resource}`,
+        reason: `Blocked site detected: ${resource}`,
       };
     }
   }
@@ -103,16 +104,7 @@ export function classifyNativeAppTitle(text: string): DetectionResult | null {
   };
 }
 
-/** Used only after both the full frame and its title bar fail to identify an approved resource. */
-export function classifyUnapprovedScreen(): DetectionResult {
-  return {
-    classification: "disallowed",
-    category: "other",
-    confidence: 0.9,
-    matchedResource: "unapproved_screen",
-    reason: "Unapproved screen detected. Return to an approved study resource.",
-  };
-}
+
 
 export function isDetectionResult(value: unknown): value is DetectionResult {
   if (!value || typeof value !== "object") return false;

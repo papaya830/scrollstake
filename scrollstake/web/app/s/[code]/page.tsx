@@ -6,7 +6,8 @@ import { useParams } from "next/navigation";
 import FocusMonitor from "@/components/FocusMonitor";
 import FocusPulse from "@/components/FocusPulse";
 import SessionAdminPanel from "@/components/SessionAdminPanel";
-import { formatTimeRemaining, loadAuth, policyKey, storeAuth, type SessionAuth, type SessionView } from "@/components/session-client";
+import SessionWrapped from "@/components/SessionWrapped";
+import { formatTimeRemaining, loadAuth, playDoomscrollAlert, policyKey, storeAuth, type SessionAuth, type SessionView } from "@/components/session-client";
 
 const cachedSessionKey = (code: string) => `scrollstake:${code.toUpperCase()}:session`;
 
@@ -19,6 +20,7 @@ export default function SessionPage() {
   const [error, setError] = useState("");
   const [now, setNow] = useState(Date.now());
   const tokenRequestInFlight = useRef(false);
+  const prevMembersRef = useRef<Record<string, number>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -76,22 +78,58 @@ export default function SessionPage() {
     return () => { clearInterval(interval); clearInterval(clock); };
   }, [code, refresh]);
 
+  useEffect(() => {
+    if (!session || !auth) return;
+    const currentMembers = session.members;
+    currentMembers.forEach(member => {
+      const prevStrikes = prevMembersRef.current[member.wallet];
+      if (prevStrikes !== undefined && member.strikes > prevStrikes && member.wallet !== auth.wallet) {
+        void playDoomscrollAlert(session.penaltyUsdc, member.name);
+      }
+      prevMembersRef.current[member.wallet] = member.strikes;
+    });
+  }, [session, auth]);
+
   const allowedResources = useMemo(
     () => session?.monitoringPolicy?.allowedResources?.length ? session.monitoringPolicy.allowedResources : localPolicy,
     [localPolicy, session?.monitoringPolicy?.allowedResources],
   );
   const status = session?.status ?? "lobby";
   const scheduledEndReached = Boolean(session?.endsAt && now >= session.endsAt);
+  const roomOver = status === "ended" || scheduledEndReached;
   const timeRemaining = formatTimeRemaining(session?.endsAt, now);
+  const viewer = auth ?? (roomOver && session ? { wallet: session.creatorWallet, name: session.members.find((member) => member.wallet === session.creatorWallet)?.name ?? "Room" } : null);
 
-  if (!auth) {
+  if (!session && !error) {
+    return (
+      <main className="shell page">
+        <nav className="nav"><Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link></nav>
+        <section className="card">Loading session…</section>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return (
+      <main className="shell page">
+        <nav className="nav"><Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link></nav>
+        <section className="card" style={{ maxWidth: 650, margin: "12vh auto", textAlign: "center" }}>
+          <span className="eyebrow">Session {code}</span>
+          <h1 style={{ fontSize: "3rem", letterSpacing: "-.06em" }}>{error || "Session not found."}</h1>
+          <Link className="button" href="/">Back home</Link>
+        </section>
+      </main>
+    );
+  }
+
+  if (!viewer) {
     return (
       <main className="shell page">
         <nav className="nav"><Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link></nav>
         <section className="card" style={{ maxWidth: 650, margin: "12vh auto", textAlign: "center" }}>
           <span className="eyebrow">Session {code}</span>
           <h1 style={{ fontSize: "3rem", letterSpacing: "-.06em" }}>Join before monitoring.</h1>
-          <p className="muted">This tab does not have a client token for the session.</p>
+          <p className="muted">This tab has not joined the room yet.</p>
           <Link className="button primary" href={`/join?code=${encodeURIComponent(code)}`}>Join session</Link>
         </section>
       </main>
@@ -106,25 +144,24 @@ export default function SessionPage() {
       </nav>
       <header className="page-head">
         <div><span className="eyebrow">{status === "lobby" ? "Session lobby" : status === "ended" || scheduledEndReached ? "Session complete" : "Live study room"}</span><h1>{status === "lobby" ? "Build the room." : status === "ended" || scheduledEndReached ? "Time is up." : "Stay expensive."}</h1></div>
-        <div style={{ textAlign: "right" }}><div className="muted">{timeRemaining && status === "live" ? `Time left · ${timeRemaining}` : "Signed in as"}</div><strong>{timeRemaining && status === "live" ? auth.name : auth.name}</strong></div>
+        <div style={{ textAlign: "right" }}><div className="muted">{timeRemaining && status === "live" ? `Time left · ${timeRemaining}` : auth ? "Signed in as" : "Room recap"}</div><strong>{viewer.name}</strong></div>
       </header>
       {error && <p className="notice" role="alert">{error}</p>}
-      {!session ? (
-        <section className="card">Loading session…</section>
-      ) : (
-        <div className="session-layout">
+      <div className="session-layout">
           <div>
-            <SessionAdminPanel session={session} auth={auth} onRefresh={refresh} />
+            {roomOver && <SessionWrapped code={code} wallet={viewer.wallet} />}
+            {auth && <SessionAdminPanel session={session} auth={auth} onRefresh={refresh} />}
             <FocusPulse code={code} live={status === "live" && !scheduledEndReached} />
-            {status === "lobby" ? null : allowedResources.length > 0 && auth.clientToken ? (
+            {status === "lobby" || !auth ? null : allowedResources.length > 0 && auth.clientToken ? (
               <FocusMonitor
                 code={code}
                 wallet={auth.wallet}
+                userName={auth.name}
                 clientToken={auth.clientToken}
                 allowedResources={allowedResources}
-                graceSeconds={session.monitoringPolicy?.graceSeconds ?? 10}
+                graceSeconds={session.monitoringPolicy?.graceSeconds ?? 3}
                 sampleIntervalSeconds={session.monitoringPolicy?.sampleIntervalSeconds ?? 3}
-                ended={status === "ended" || scheduledEndReached}
+                ended={roomOver}
                 onEvent={refresh}
               />
             ) : (
@@ -132,16 +169,16 @@ export default function SessionPage() {
                 <div className="monitor-main">
                   <strong>{auth.clientToken ? "Policy pending" : "Approval pending"}</strong>
                   <p>{auth.clientToken ? "The creator&apos;s allowlist is not available from the session API yet. Monitoring stays off so an unknown policy cannot cost you money." : "The creator must approve your request before a monitoring token is issued."}</p>
-                  <div className="notice">The lifecycle API must return approved membership and <code>monitoringPolicy.allowedResources</code> before monitoring can start.</div>
+                  <div className="notice">The lifecycle API must return approved membership and <code>monitoringPolicy.blockedSites</code> before monitoring can start.</div>
                 </div>
               </section>
             )}
           </div>
           <aside style={{ display: "grid", gap: 18 }}>
             <section className="card">
-              <span className="eyebrow">Approved resources</span>
+              <span className="eyebrow">Blocked sites</span>
               <div className="policy-list">
-                {allowedResources.length ? allowedResources.map((resource) => <div className="policy-chip" key={resource}>{resource}</div>) : <p className="muted">No policy received.</p>}
+                {allowedResources.length ? <p className="muted">{allowedResources.length} site{allowedResources.length === 1 ? "" : "s"} blocked by creator</p> : <p className="muted">No policy received.</p>}
               </div>
             </section>
             <section className="card">
@@ -149,7 +186,7 @@ export default function SessionPage() {
               <div className="member-list">
                 {session.members.map((member) => (
                   <div className="member" key={member.wallet}>
-                    <div className="member-head"><span>{member.name}</span><span>{"♥".repeat(member.livesLeft) || "—"}</span></div>
+                  <div className="member-head"><span>{member.name}</span><span>{"♥".repeat(member.livesLeft) || "—"}</span></div>
                     <div className="member-stats"><span>{member.strikes} strikes</span><span>${member.slashedUsdc.toFixed(2)} slashed</span></div>
                   </div>
                 ))}
@@ -160,7 +197,6 @@ export default function SessionPage() {
             </section>
           </aside>
         </div>
-      )}
     </main>
   );
 }

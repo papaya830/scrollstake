@@ -33,7 +33,7 @@ export default function ScreenMonitor({
   wallet,
   clientToken,
   allowedResources,
-  graceSeconds = 10,
+  graceSeconds = 3,
   sampleIntervalSeconds = 3,
   ended = false,
   onEvent,

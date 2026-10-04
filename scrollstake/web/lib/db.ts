@@ -26,6 +26,18 @@ function getPool(): Pool | null {
   return (pool ??= new Pool({ connectionString: url.toString(), ssl: { rejectUnauthorized: false } }));
 }
 
+/** Optional reads, such as the analytics view. A miss must not turn the database off. */
+export async function dbQuerySoft(text: string, values: unknown[] = []) {
+  const active = getPool();
+  if (!active) return null;
+  try {
+    return await active.query(text, values);
+  } catch (error) {
+    console.error("[db] optional query failed", error);
+    return null;
+  }
+}
+
 /** Shared by the session repository; never call it unless DATABASE_URL is configured. */
 export async function dbQuery(text: string, values: unknown[] = []) {
   const active = getPool();

@@ -58,3 +58,44 @@ export function formatTimeRemaining(endsAt: number | undefined, now = Date.now()
   const seconds = Math.max(0, Math.ceil((endsAt - now) / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
+
+export async function playDoomscrollAlert(amount: number, user?: string) {
+  let audioUrl: string | undefined;
+  try {
+    const response = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amountDeducted: amount, username: user })
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch audio');
+
+    const audioBlob = await response.blob();
+    audioUrl = URL.createObjectURL(audioBlob);
+
+    const audio = new Audio(audioUrl);
+    await audio.play();
+  } catch (error) {
+    console.error("Failed to play doomscroll alert:", error);
+  } finally {
+    if (audioUrl) window.setTimeout(() => URL.revokeObjectURL(audioUrl!), 1_000);
+  }
+}
+export async function playWarningTick() {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(800, ctx.currentTime);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {
+    console.error("Failed to play warning tick:", e);
+  }
+}

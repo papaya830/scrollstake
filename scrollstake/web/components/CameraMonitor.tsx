@@ -58,7 +58,7 @@ async function loadFaceLandmarker() {
 }
 
 /** Local-only MediaPipe look-down detector. Camera frames never leave the browser. */
-export default function CameraMonitor({ code, wallet, clientToken, onDistraction, graceSeconds = 10, ended = false, onEvent }: Props) {
+export default function CameraMonitor({ code, wallet, clientToken, onDistraction, graceSeconds = 3, ended = false, onEvent }: Props) {
   const [state, setState] = useState<CameraState>(ended ? "ended" : "idle");
   const [detail, setDetail] = useState("Camera is off");
   const [countdown, setCountdown] = useState(graceSeconds);

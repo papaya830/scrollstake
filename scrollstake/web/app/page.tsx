@@ -28,7 +28,7 @@ export default function Home() {
           <div className="muted">USDC committed</div>
           <div className="rule" />
           <div className="member-head"><span>Focus streak</span><span>48 min</span></div>
-          <div className="member-head" style={{ marginTop: 14 }}><span>Lives left</span><span>♥ ♥</span></div>
+          <div className="member-head" style={{ marginTop: 14 }}><span>Grace period</span><span>3 sec</span></div>
           <div className="member-head" style={{ marginTop: 14 }}><span>Penalty</span><span>$0.50</span></div>
         </aside>
       </section>
