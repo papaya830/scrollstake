@@ -7,7 +7,11 @@ import { DEFAULT_PROGRAM_ID } from "@/lib/solana";
 export async function GET() {
   const mint = process.env.NEXT_PUBLIC_USDC_MINT;
   const secret = process.env.ORACLE_SECRET_KEY;
-  if (!mint || !secret || process.env.SOLANA_DRY_RUN !== "0") return NextResponse.json({ error: "real-chain mode is not configured" }, { status: 503 });
+  if (!mint || !secret || process.env.SOLANA_DRY_RUN !== "0") {
+    const missing = [!mint && "NEXT_PUBLIC_USDC_MINT", !secret && "ORACLE_SECRET_KEY", process.env.SOLANA_DRY_RUN !== "0" && "SOLANA_DRY_RUN=0"].filter(Boolean);
+    console.warn(`[chain] DRY-RUN: no devnet transactions will be sent. Missing: ${missing.join(", ")}`);
+    return NextResponse.json({ error: "real-chain mode is not configured", missing }, { status: 503 });
+  }
   try {
     return NextResponse.json({
       rpc: process.env.NEXT_PUBLIC_SOLANA_RPC ?? "https://api.devnet.solana.com",

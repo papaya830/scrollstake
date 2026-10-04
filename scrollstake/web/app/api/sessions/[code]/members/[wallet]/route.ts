@@ -10,6 +10,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
     try {
       const sessionBefore = await (await import("@/lib/store")).getSession(code);
       if (!sessionBefore) return NextResponse.json({ error: "session not found" }, { status: 404 });
+      // Real-chain mode must never accept a fabricated receipt or a room created without an on-chain group.
+      if (process.env.SOLANA_DRY_RUN === "0" && (String(body.txSig ?? "").startsWith("DRYRUN_") || !sessionBefore.groupTx)) {
+        return NextResponse.json({ error: "This server is in real-chain mode but the deposit was a dry-run receipt. Create a new room so its group is created on devnet." }, { status: 409 });
+      }
       await verifyDepositOnChain(code, wallet, toBaseUnits(sessionBefore.stakeUsdc), String(body.txSig ?? ""));
       const session = await markDeposit(code, wallet, String(body.txSig ?? ""));
       return session ? NextResponse.json(session) : NextResponse.json({ error: "deposit cannot be recorded" }, { status: 409 });
