@@ -18,7 +18,7 @@ agents/                one brief + paste-in prompt per teammate
 
 ## Free preview
 
-`/preview` lets anyone feel a slash before staking: webcam or a "Simulate getting caught" button, a simulated 20.00 → 19.50 balance, and a spoken roast. It is entirely client-side (no session, wallet, chain, DB or `/api/*` calls).
+`/preview` lets anyone feel a slash before staking: webcam or a "Simulate getting caught" button, a simulated 20.00 → 19.50 balance, and a roast shouted by the ElevenLabs voice ("This is a test, but … Now lock in!"). Its only request is `/api/tts` in preview mode, where the server builds the line; without `ELEVENLABS_API_KEY`/`ELEVENLABS_VOICE_ID` it falls back to the browser voice. No session, wallet, chain, DB or `/api/events` calls.
 
 ## Vercel shared-session setup
 

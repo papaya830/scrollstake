@@ -3,18 +3,19 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import CameraMonitor from "@/components/CameraMonitor";
-import { buildPreviewRoast, playHit, speakRoast, unlockAudio, type SpeechResult } from "@/components/preview-roast";
+import { buildPreviewRoast, playHit, playPreviewAlert, stopPreviewAlert, PREVIEW_PENALTY_USDC, randomRoastLine, unlockAudio, type SpeechResult } from "@/components/preview-roast";
 
 // Preview-only values. Real rooms take their grace period and penalty from the session.
 const START_BALANCE = 20;
-const PENALTY = 0.5;
+const PENALTY = PREVIEW_PENALTY_USDC;
 const PREVIEW_GRACE_SECONDS = 10;
 
 type Caught = { roast: string; via: "camera" | "button"; speech: SpeechResult | "speaking" };
 
 /**
- * Standalone "try it" page: no session, wallet, or login. Everything runs in this tab.
+ * Standalone "try it" page: no session, wallet, or login.
  * It must never call the chain, the database, /api/events, or any session route.
+ * Its only request is /api/tts (ElevenLabs voice, no session), with a browser-voice fallback.
  */
 export default function PreviewPage() {
   const [name, setName] = useState("");
@@ -35,15 +36,16 @@ export default function PreviewPage() {
   const getCaught = useCallback((via: Caught["via"]) => {
     if (caughtRef.current) return;
     caughtRef.current = true;
-    const roast = buildPreviewRoast(nameRef.current, PENALTY);
+    const line = randomRoastLine();
+    const roast = buildPreviewRoast(nameRef.current, PENALTY, line);
     setBalance((value) => Math.round((value - PENALTY) * 100) / 100);
     setCaught({ roast, via, speech: "speaking" });
     playHit();
-    void speakRoast(roast).then((speech) => setCaught((current) => current && current.roast === roast ? { ...current, speech } : current));
+    void playPreviewAlert(nameRef.current, PENALTY, line).then((speech) => setCaught((current) => current && current.roast === roast ? { ...current, speech } : current));
   }, []);
 
   const tryAgain = () => {
-    window.speechSynthesis?.cancel();
+    stopPreviewAlert();
     caughtRef.current = false;
     setCaught(null);
     setBalance(START_BALANCE);
@@ -124,7 +126,7 @@ export default function PreviewPage() {
             <div className="hit" aria-label={`minus ${PENALTY.toFixed(2)} USDC`}>-{PENALTY.toFixed(2)} USDC</div>
             <blockquote id="lockout-roast" className="roast">{caught.roast}</blockquote>
             <p className="fine" aria-live="polite">
-              {caught.speech === "speaking" ? "Speaking…" : caught.speech === "spoken" ? "🔊 Roast played aloud." : "Audio isn't available in this browser, so the roast is shown here instead."}
+              {caught.speech === "speaking" ? "Loading your roast…" : caught.speech === "elevenlabs" ? "🔊 Roast played aloud." : caught.speech === "spoken" ? "🔊 Roast played aloud (browser voice)." : "Audio isn't available in this browser, so the roast is shown here instead."}
             </p>
             <div className="actions" style={{ justifyContent: "center" }}>
               <Link className="button primary" href="/create">Start for real</Link>
