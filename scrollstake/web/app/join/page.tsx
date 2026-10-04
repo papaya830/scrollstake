@@ -25,7 +25,11 @@ function JoinSessionForm() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ code, wallet, name }),
       });
-      const result = await response.json() as { clientToken?: string; membershipStatus?: "pending" | "approved"; error?: string };
+      const result = await response.json() as { clientToken?: string; membershipStatus?: "pending" | "approved"; error?: string; status?: string };
+      if (result.status === "ended") {
+        router.push(`/s/${code}`);
+        return;
+      }
       if (!response.ok) throw new Error(result.error ?? "Could not join that session.");
       storeAuth(code, { wallet, name, clientToken: result.clientToken, membershipStatus: result.membershipStatus ?? (result.clientToken ? "approved" : "pending") });
       router.push(`/s/${code}`);

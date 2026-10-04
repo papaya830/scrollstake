@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import FocusMonitor from "@/components/FocusMonitor";
 import FocusPulse from "@/components/FocusPulse";
 import SessionAdminPanel from "@/components/SessionAdminPanel";
+import SessionWrapped from "@/components/SessionWrapped";
 import { formatTimeRemaining, loadAuth, policyKey, storeAuth, type SessionAuth, type SessionView } from "@/components/session-client";
 
 const cachedSessionKey = (code: string) => `scrollstake:${code.toUpperCase()}:session`;
@@ -82,16 +83,40 @@ export default function SessionPage() {
   );
   const status = session?.status ?? "lobby";
   const scheduledEndReached = Boolean(session?.endsAt && now >= session.endsAt);
+  const roomOver = status === "ended" || scheduledEndReached;
   const timeRemaining = formatTimeRemaining(session?.endsAt, now);
+  const viewer = auth ?? (roomOver && session ? { wallet: session.creatorWallet, name: session.members.find((member) => member.wallet === session.creatorWallet)?.name ?? "Room" } : null);
 
-  if (!auth) {
+  if (!session && !error) {
+    return (
+      <main className="shell page">
+        <nav className="nav"><Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link></nav>
+        <section className="card">Loading session…</section>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return (
+      <main className="shell page">
+        <nav className="nav"><Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link></nav>
+        <section className="card" style={{ maxWidth: 650, margin: "12vh auto", textAlign: "center" }}>
+          <span className="eyebrow">Session {code}</span>
+          <h1 style={{ fontSize: "3rem", letterSpacing: "-.06em" }}>{error || "Session not found."}</h1>
+          <Link className="button" href="/">Back home</Link>
+        </section>
+      </main>
+    );
+  }
+
+  if (!viewer) {
     return (
       <main className="shell page">
         <nav className="nav"><Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link></nav>
         <section className="card" style={{ maxWidth: 650, margin: "12vh auto", textAlign: "center" }}>
           <span className="eyebrow">Session {code}</span>
           <h1 style={{ fontSize: "3rem", letterSpacing: "-.06em" }}>Join before monitoring.</h1>
-          <p className="muted">This tab does not have a client token for the session.</p>
+          <p className="muted">This tab has not joined the room yet.</p>
           <Link className="button primary" href={`/join?code=${encodeURIComponent(code)}`}>Join session</Link>
         </section>
       </main>
@@ -106,17 +131,15 @@ export default function SessionPage() {
       </nav>
       <header className="page-head">
         <div><span className="eyebrow">{status === "lobby" ? "Session lobby" : status === "ended" || scheduledEndReached ? "Session complete" : "Live study room"}</span><h1>{status === "lobby" ? "Build the room." : status === "ended" || scheduledEndReached ? "Time is up." : "Stay expensive."}</h1></div>
-        <div style={{ textAlign: "right" }}><div className="muted">{timeRemaining && status === "live" ? `Time left · ${timeRemaining}` : "Signed in as"}</div><strong>{timeRemaining && status === "live" ? auth.name : auth.name}</strong></div>
+        <div style={{ textAlign: "right" }}><div className="muted">{timeRemaining && status === "live" ? `Time left · ${timeRemaining}` : auth ? "Signed in as" : "Room recap"}</div><strong>{viewer.name}</strong></div>
       </header>
       {error && <p className="notice" role="alert">{error}</p>}
-      {!session ? (
-        <section className="card">Loading session…</section>
-      ) : (
-        <div className="session-layout">
+      <div className="session-layout">
           <div>
-            <SessionAdminPanel session={session} auth={auth} onRefresh={refresh} />
+            {roomOver && <SessionWrapped code={code} wallet={viewer.wallet} />}
+            {auth && <SessionAdminPanel session={session} auth={auth} onRefresh={refresh} />}
             <FocusPulse code={code} live={status === "live" && !scheduledEndReached} />
-            {status === "lobby" ? null : allowedResources.length > 0 && auth.clientToken ? (
+            {status === "lobby" || !auth ? null : allowedResources.length > 0 && auth.clientToken ? (
               <FocusMonitor
                 code={code}
                 wallet={auth.wallet}
@@ -124,10 +147,10 @@ export default function SessionPage() {
                 allowedResources={allowedResources}
                 graceSeconds={session.monitoringPolicy?.graceSeconds ?? 10}
                 sampleIntervalSeconds={session.monitoringPolicy?.sampleIntervalSeconds ?? 3}
-                ended={status === "ended" || scheduledEndReached}
+                ended={roomOver}
                 onEvent={refresh}
               />
-            ) : (
+            ) : status === "lobby" || !auth ? null : (
               <section className="card monitor">
                 <div className="monitor-main">
                   <strong>{auth.clientToken ? "Policy pending" : "Approval pending"}</strong>
@@ -160,7 +183,6 @@ export default function SessionPage() {
             </section>
           </aside>
         </div>
-      )}
     </main>
   );
 }

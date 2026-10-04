@@ -124,6 +124,21 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
 .pulse-members { display: grid; gap: 8px; }
 .pulse-member { display: grid; grid-template-columns: minmax(90px, .7fr) 1fr 1.25fr; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: .78rem; }
 .pulse-member span { color: var(--muted); }
+.wrapped { position: relative; margin-bottom: 18px; overflow: hidden; border: 1px solid var(--line); border-radius: 28px; background: #101311; }
+.wrapped-progress { display: flex; gap: 5px; padding: 16px 16px 0; }
+.wrapped-progress span { flex: 1; height: 3px; border-radius: 99px; background: rgba(255,255,255,.14); }
+.wrapped-progress span.on { background: var(--acid); }
+.wrapped-stage { min-height: 280px; display: grid; align-content: start; gap: 12px; padding: 28px 28px 8px; background:
+  radial-gradient(circle at 80% 0%, rgba(216,255,71,.2), transparent 18rem),
+  linear-gradient(160deg, #171b12, #101311 55%); }
+.wrapped-stage[data-tone="money"], .wrapped-stage[data-tone="crack"] { background: radial-gradient(circle at 80% 0%, rgba(255,107,95,.22), transparent 18rem), linear-gradient(160deg, #1c1211, #101311 55%); }
+.wrapped-stage[data-tone="group"], .wrapped-stage[data-tone="clean"] { background: radial-gradient(circle at 80% 0%, rgba(102,242,180,.18), transparent 18rem), linear-gradient(160deg, #10201a, #101311 55%); }
+.wrapped-stat { font-size: clamp(3.2rem, 8vw, 6.4rem); letter-spacing: -.07em; line-height: .9; }
+.wrapped-stat.long { font-size: clamp(2.2rem, 5vw, 4rem); }
+.wrapped-stage h2 { margin: 0; max-width: 16ch; font-size: clamp(1.6rem, 3vw, 2.3rem); letter-spacing: -.045em; line-height: 1.05; }
+.wrapped-stage p { margin: 0; max-width: 38rem; color: var(--muted); line-height: 1.5; }
+.wrapped-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 18px 18px; }
+.wrapped-share { margin: 0 18px 18px; }
 .steps { counter-reset: steps; display: grid; gap: 20px; }
 .step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; color: var(--muted); line-height: 1.5; }
 .step::before { counter-increment: steps; content: counter(steps); width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--acid); color: #11150b; font-weight: 850; }
