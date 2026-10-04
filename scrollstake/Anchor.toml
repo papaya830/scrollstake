@@ -1,18 +1,20 @@
+[toolchain]
+
 [features]
-seeds = false
+resolution = true
 skip-lint = false
 
-[programs.localnet]
-scrollstake = "11111111111111111111111111111111"
-
 [programs.devnet]
-scrollstake = "11111111111111111111111111111111"
+scrollstake = "5yJpfWy3pt7haWoVZgbzn93XSCe3wuTydAubwhgedQ1f"
+
+[programs.localnet]
+scrollstake = "5yJpfWy3pt7haWoVZgbzn93XSCe3wuTydAubwhgedQ1f"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "Devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

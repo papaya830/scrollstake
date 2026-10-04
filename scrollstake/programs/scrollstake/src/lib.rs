@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 // Placeholder. Run `anchor keys sync` after the first build to replace it.
-declare_id!("11111111111111111111111111111111");
+declare_id!("5yJpfWy3pt7haWoVZgbzn93XSCe3wuTydAubwhgedQ1f");
 
 const MAX_GROUP_ID: usize = 16;
 
