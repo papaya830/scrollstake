@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PSM, type Worker } from "tesseract.js";
-import type { FaceLandmarker } from "@mediapipe/tasks-vision";
+import type { FaceLandmarker, ObjectDetector } from "@mediapipe/tasks-vision";
 import { classifyNativeAppTitle, classifyOcrText } from "./screen-policy";
 import { activeReasons, combinedReason, summarizeFocus, type FocusSignal } from "./focus-state";
 import { playDoomscrollAlert, playWarningTick } from "./session-client";
@@ -24,6 +24,7 @@ const COOLDOWN_MS = 15_000;
 const HEARTBEAT_MS = 15_000;
 const WASM_ROOT = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+const OBJECT_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/latest/efficientdet_lite0.tflite";
 const NOSE = 1, FOREHEAD = 10, CHIN = 152, LEFT_TOP = 159, LEFT_BOTTOM = 145, LEFT_IRIS = 468, RIGHT_TOP = 386, RIGHT_BOTTOM = 374, RIGHT_IRIS = 473;
 
 const idleSignal = (detail: string): FocusSignal => ({ state: "idle", detail });
@@ -51,6 +52,29 @@ async function loadFaceLandmarker() {
   }
 }
 
+async function loadObjectDetector() {
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    if (args.some((arg) => String(arg).includes("Created TensorFlow Lite XNNPACK delegate for CPU"))) return;
+    originalError(...args);
+  };
+  try {
+    const { ObjectDetector, FilesetResolver } = await import("@mediapipe/tasks-vision");
+    const fileset = await FilesetResolver.forVisionTasks(WASM_ROOT);
+    return await ObjectDetector.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: OBJECT_MODEL_URL },
+      runningMode: "VIDEO",
+      scoreThreshold: 0.35,
+    });
+  } catch (err) {
+    console.warn("ObjectDetector load fallback:", err);
+    return null;
+  } finally {
+    console.error = originalError;
+  }
+}
+
+
 export default function FocusMonitor({ code, wallet, userName, clientToken, allowedResources, graceSeconds = 3, sampleIntervalSeconds = 3, ended = false, onEvent }: Props) {
   const [signals, setSignals] = useState({ screen: idleSignal("Screen share is off"), camera: idleSignal("Camera is off") });
   const [started, setStarted] = useState(false);
@@ -67,6 +91,7 @@ export default function FocusMonitor({ code, wallet, userName, clientToken, allo
   const ocrWorkerRef = useRef<Worker | null>(null);
   const titleOcrWorkerRef = useRef<Worker | null>(null);
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
+  const objectDetectorRef = useRef<ObjectDetector | null>(null);
   const screenTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cameraTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -86,6 +111,7 @@ export default function FocusMonitor({ code, wallet, userName, clientToken, allo
   const eyeHistoryRef = useRef<number[]>([]);
   const lastFaceRef = useRef(0);
   const lastTickRef = useRef(graceSeconds);
+
 
   useEffect(() => {
     if (countdown < graceSeconds && countdown > 0) {
@@ -188,7 +214,9 @@ export default function FocusMonitor({ code, wallet, userName, clientToken, allo
     screenStreamRef.current = null;
     cameraStreamRef.current = null;
     landmarkerRef.current?.close();
+    objectDetectorRef.current?.close();
     landmarkerRef.current = null;
+    objectDetectorRef.current = null;
     void ocrWorkerRef.current?.terminate();
     ocrWorkerRef.current = null;
     void titleOcrWorkerRef.current?.terminate();
@@ -288,10 +316,36 @@ export default function FocusMonitor({ code, wallet, userName, clientToken, allo
   const analyzeCamera = useCallback(() => {
     const video = cameraVideoRef.current;
     const landmarker = landmarkerRef.current;
-    if (!video || !landmarker || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+    const objectDetector = objectDetectorRef.current;
+    if (!video || (!landmarker && !objectDetector) || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
     try {
-      const landmarks = landmarker.detectForVideo(video, performance.now()).faceLandmarks[0] as Landmark[] | undefined;
+      const timestamp = performance.now();
+
+      // Check for phone in frame via ObjectDetector
+      if (objectDetector) {
+        try {
+          const objResult = objectDetector.detectForVideo(video, timestamp);
+          const hasPhone = objResult.detections.some((det) =>
+            det.categories.some(
+              (cat) => ["cell phone", "mobile phone", "phone"].includes((cat.categoryName || "").toLowerCase()) && cat.score >= 0.35
+            )
+          );
+          if (hasPhone) {
+            updateSignal("camera", {
+              state: "violation",
+              detail: "Mobile phone detected in camera frame. Put your phone away.",
+              reason: "camera:phone_detected",
+            });
+            return;
+          }
+        } catch {
+          // ignore frame drop errors
+        }
+      }
+
+      const landmarks = landmarker ? (landmarker.detectForVideo(video, timestamp).faceLandmarks[0] as Landmark[] | undefined) : undefined;
       const reading = landmarks ? readFace(landmarks) : null;
+
       const now = Date.now();
       if (!reading) {
         if (baselineRef.current && now - lastFaceRef.current >= FACE_MISSING_MS) updateSignal("camera", { state: "violation", detail: "Face is no longer visible. Return to camera.", reason: "camera:face_missing" });
@@ -370,8 +424,13 @@ export default function FocusMonitor({ code, wallet, userName, clientToken, allo
       if (screenVideoRef.current) { screenVideoRef.current.srcObject = screenResult.value; await screenVideoRef.current.play(); }
       if (cameraVideoRef.current) { cameraVideoRef.current.srcObject = cameraResult.value; await cameraVideoRef.current.play(); }
       setSignal("screen", { state: "focused", detail: "Entire screen connected. Checking your study policy locally." });
-      setSignal("camera", { state: "calibrating", detail: "Loading local face detection…" });
-      landmarkerRef.current = await loadFaceLandmarker();
+      setSignal("camera", { state: "calibrating", detail: "Loading local face & phone detection…" });
+      const [landmarker, objectDetector] = await Promise.all([
+        loadFaceLandmarker(),
+        loadObjectDetector(),
+      ]);
+      landmarkerRef.current = landmarker;
+      objectDetectorRef.current = objectDetector;
       calibrationStartRef.current = null;
       calibrationHeadRef.current = [];
       calibrationEyeRef.current = [];

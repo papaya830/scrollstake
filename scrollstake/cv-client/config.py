@@ -57,3 +57,12 @@ LOOP_SLEEP = 0.03
 # Extra comma-separated lowercase keywords, no code edit needed.
 EXTRA_DISTRACTING = os.getenv("EXTRA_DISTRACTING", "")
 EXTRA_ALLOW = os.getenv("EXTRA_ALLOW", "")
+
+# Cell phone detection settings
+DETECT_PHONE = os.getenv("DETECT_PHONE", "true").lower() in ("1", "true", "yes")
+PHONE_CONFIDENCE_THRESHOLD = _f("PHONE_CONFIDENCE_THRESHOLD", 0.45)
+PHONE_MODEL_URL = os.getenv(
+    "PHONE_MODEL_URL",
+    "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/latest/efficientdet_lite0.tflite"
+)
+
