@@ -22,6 +22,9 @@ from window_watch import check_window
 
 
 def send_event(reason: str, duration: float) -> None:
+    # Normalize internal 'cam:' prefix to 'camera:' for API compatibility
+    if reason.startswith("cam:"):
+        reason = "camera:" + reason[4:]
     body = {
         "code": config.SESSION_CODE,
         "wallet": config.WALLET,
@@ -40,6 +43,7 @@ def send_event(reason: str, duration: float) -> None:
         print(f"[event] {reason} -> {r.status_code} {r.text}")
     except requests.RequestException as e:
         print(f"[event] failed to reach API: {e}")
+
 
 
 def open_camera(index: int):
@@ -139,6 +143,10 @@ def main() -> None:
                     txt = (f"head {'--' if dh is None else f'{dh:+.3f}'}/{config.HEAD_DELTA}  "
                            f"eye {'--' if de is None else f'{de:+.3f}'}/{config.EYE_DELTA}")
                     cv2.putText(frame, txt, (10, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+                if det is not None and 'reading' in locals() and reading.phone_detected:
+                    phone_txt = f"PHONE DETECTED ({reading.phone_confidence:.0%})"
+                    cv2.putText(frame, phone_txt, (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 255), 2)
+
                 cv2.imshow("ScrollStake", frame)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):

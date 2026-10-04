@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FaceLandmarker } from "@mediapipe/tasks-vision";
+import type { FaceLandmarker, ObjectDetector } from "@mediapipe/tasks-vision";
 
 type CameraState = "idle" | "requesting" | "calibrating" | "monitoring" | "distracted" | "lost" | "ended" | "degraded";
 type Landmark = { x: number; y: number; z: number };
 type Props = { code: string; wallet: string; clientToken: string; graceSeconds?: number; ended?: boolean; onEvent?: () => void };
-type EventResponse = { status: "forgiven" | "slashed" | "ignored" | "error"; livesLeft?: number; strikes?: number; error?: string };
+type EventResponse = { status: "slashed" | "ignored" | "error"; strikes?: number; error?: string };
 
 const CALIBRATION_MS = 3_000;
 const SAMPLE_MS = 200;
@@ -17,6 +17,7 @@ const SMOOTH_FRAMES = 7;
 const COOLDOWN_MS = 15_000;
 const WASM_ROOT = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+const OBJECT_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/latest/efficientdet_lite0.tflite";
 
 // Same landmarks and thresholds as the desktop CV client.
 const NOSE = 1, FOREHEAD = 10, CHIN = 152, LEFT_TOP = 159, LEFT_BOTTOM = 145, LEFT_IRIS = 468, RIGHT_TOP = 386, RIGHT_BOTTOM = 374, RIGHT_IRIS = 473;
@@ -53,8 +54,31 @@ async function loadFaceLandmarker() {
   }
 }
 
+async function loadObjectDetector() {
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    if (args.some((arg) => String(arg).includes("Created TensorFlow Lite XNNPACK delegate for CPU"))) return;
+    originalError(...args);
+  };
+  try {
+    const { ObjectDetector, FilesetResolver } = await import("@mediapipe/tasks-vision");
+    const fileset = await FilesetResolver.forVisionTasks(WASM_ROOT);
+    return await ObjectDetector.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: OBJECT_MODEL_URL },
+      runningMode: "VIDEO",
+      scoreThreshold: 0.4,
+    });
+  } catch (err) {
+    console.warn("ObjectDetector load fallback:", err);
+    return null;
+  } finally {
+    console.error = originalError;
+  }
+}
+
+
 /** Local-only MediaPipe look-down detector. Camera frames never leave the browser. */
-export default function CameraMonitor({ code, wallet, clientToken, graceSeconds = 10, ended = false, onEvent }: Props) {
+export default function CameraMonitor({ code, wallet, clientToken, graceSeconds = 3, ended = false, onEvent }: Props) {
   const [state, setState] = useState<CameraState>(ended ? "ended" : "idle");
   const [detail, setDetail] = useState("Camera is off");
   const [countdown, setCountdown] = useState(graceSeconds);
@@ -63,6 +87,7 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
+  const objectDetectorRef = useRef<ObjectDetector | null>(null);
   const sampleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lossTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clockTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -98,7 +123,7 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
       });
       const body = await response.json() as EventResponse;
       if (!response.ok || body.status === "error") throw new Error(body.error ?? "The event API rejected the camera report.");
-      setEventResult(body.status === "slashed" ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}` : body.status === "forgiven" ? `Free pass used · ${body.livesLeft ?? 0} left` : "Duplicate event ignored");
+      setEventResult(body.status === "slashed" ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}` : "Duplicate event ignored");
       onEvent?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not report the camera interruption.");
@@ -113,13 +138,19 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
     setDetail("Focused. Face position matches your calibration.");
   }, [graceSeconds]);
 
-  const reportSignal = useCallback((reason: "camera:looking_down" | "camera:face_missing") => {
+  const reportSignal = useCallback((reason: "camera:looking_down" | "camera:face_missing" | "camera:phone_detected") => {
     const now = Date.now();
     if (now < cooldownUntilRef.current) return;
     if (distractionSinceRef.current === null) distractionSinceRef.current = now;
     const elapsed = (now - distractionSinceRef.current) / 1000;
     setState("distracted");
-    setDetail(reason === "camera:looking_down" ? "Looking down detected. Return to your screen." : "Face is no longer visible. Return to camera.");
+    setDetail(
+      reason === "camera:phone_detected"
+        ? "Mobile phone detected in camera frame. Put your phone away."
+        : reason === "camera:looking_down"
+        ? "Looking down detected. Return to your screen."
+        : "Face is no longer visible. Return to camera."
+    );
     setCountdown(Math.max(0, Math.ceil(graceSeconds - elapsed)));
     if (elapsed >= graceSeconds) {
       cooldownUntilRef.current = now + COOLDOWN_MS;
@@ -161,9 +192,30 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
   const analyze = useCallback(() => {
     const video = videoRef.current;
     const landmarker = landmarkerRef.current;
-    if (!video || !landmarker || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+    const objectDetector = objectDetectorRef.current;
+    if (!video || (!landmarker && !objectDetector) || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
     try {
-      const landmarks = landmarker.detectForVideo(video, performance.now()).faceLandmarks[0] as Landmark[] | undefined;
+      const timestamp = performance.now();
+
+      // Check for phone in frame via ObjectDetector
+      if (objectDetector) {
+        try {
+          const objResult = objectDetector.detectForVideo(video, timestamp);
+          const hasPhone = objResult.detections.some((det) =>
+            det.categories.some(
+              (cat) => ["cell phone", "mobile phone", "phone"].includes((cat.categoryName || "").toLowerCase()) && cat.score >= 0.35
+            )
+          );
+          if (hasPhone) {
+            reportSignal("camera:phone_detected");
+            return;
+          }
+        } catch {
+          // ignore frame drop errors
+        }
+      }
+
+      const landmarks = landmarker ? (landmarker.detectForVideo(video, timestamp).faceLandmarks[0] as Landmark[] | undefined) : undefined;
       const reading = landmarks ? readFace(landmarks) : null;
       const now = Date.now();
       if (!reading) {
@@ -224,8 +276,13 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
         await videoRef.current.play();
       }
       setState("calibrating");
-      setDetail("Loading local face detection…");
-      landmarkerRef.current = await loadFaceLandmarker();
+      setDetail("Loading local face & phone detection…");
+      const [landmarker, objectDetector] = await Promise.all([
+        loadFaceLandmarker(),
+        loadObjectDetector(),
+      ]);
+      landmarkerRef.current = landmarker;
+      objectDetectorRef.current = objectDetector;
       calibrationStartedRef.current = null;
       calibrationHeadRef.current = [];
       calibrationEyeRef.current = [];
@@ -244,6 +301,7 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
     }
   }, [analyze, clearTimers, handleCameraLost]);
 
+
   const stop = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     handleCameraLost();
@@ -255,6 +313,7 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
     clearTimers();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     landmarkerRef.current?.close();
+    objectDetectorRef.current?.close();
     setState("ended");
     setDetail("This session has ended.");
   }, [clearTimers, ended]);
@@ -264,7 +323,9 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
     clearTimers();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     landmarkerRef.current?.close();
+    objectDetectorRef.current?.close();
   }, [clearTimers]);
+
 
   const active = ["calibrating", "monitoring", "distracted", "degraded"].includes(state);
   const title = state === "lost" || state === "distracted" ? (countdown > 0 ? `${countdown}s` : "Reported") : state === "calibrating" ? "Calibrating" : state === "monitoring" ? "Locked in" : state === "degraded" ? "Check paused" : state === "requesting" ? "Allow access" : state === "ended" ? "Session over" : "Ready?";

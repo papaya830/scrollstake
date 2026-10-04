@@ -3,11 +3,11 @@ import { databaseEnabled, dbQuery, persistentDatabaseRequired } from "./db";
 import type { Member, MembershipStatus, MonitoringPolicy, Session, SessionStatus } from "./types";
 
 type InternalSession = Session & { tokens: Record<string, string> };
-type SessionInput = { creatorWallet: string; stakeUsdc: number; penaltyUsdc: number; lives: number; durationMinutes?: number; allowedResources?: string[] };
+type SessionInput = { creatorWallet: string; stakeUsdc: number; penaltyUsdc: number; durationMinutes?: number; allowedResources?: string[]; graceSeconds?: number };
 const g = globalThis as unknown as { __scrollstake?: Map<string, InternalSession> };
 const sessions = (g.__scrollstake ??= new Map<string, InternalSession>());
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const DEFAULT_POLICY: MonitoringPolicy = { allowedResources: [], graceSeconds: 10, sampleIntervalSeconds: 3 };
+const DEFAULT_POLICY: MonitoringPolicy = { allowedResources: [], graceSeconds: 3, sampleIntervalSeconds: 3 };
 
 export class PersistentStoreUnavailableError extends Error {
   constructor() {
@@ -24,10 +24,10 @@ function newCode(): string { const bytes = randomBytes(6); return Array.from(byt
 function publicView(s: InternalSession): Session { const { tokens: _tokens, ...rest } = s; return JSON.parse(JSON.stringify(rest)) as Session; }
 function stamp(value: unknown): number | undefined { return value ? (value instanceof Date ? value.getTime() : new Date(String(value)).getTime()) : undefined; }
 function memberFromRow(row: Record<string, unknown>): Member {
-  return { wallet: String(row.wallet), name: String(row.name), livesLeft: Number(row.lives_left), strikes: Number(row.strikes), slashedUsdc: Number(row.slashed_usdc), lastEventAt: stamp(row.last_event_at) ?? 0, membershipStatus: row.membership_status as MembershipStatus, depositedAt: stamp(row.deposited_at), depositTx: row.deposit_tx ? String(row.deposit_tx) : undefined };
+  return { wallet: String(row.wallet), name: String(row.name), strikes: Number(row.strikes), slashedUsdc: Number(row.slashed_usdc), lastEventAt: stamp(row.last_event_at) ?? 0, membershipStatus: row.membership_status as MembershipStatus, depositedAt: stamp(row.deposited_at), depositTx: row.deposit_tx ? String(row.deposit_tx) : undefined };
 }
 function sessionFromRow(row: Record<string, unknown>, members: Member[]): Session {
-  return { code: String(row.code), creatorWallet: String(row.creator_wallet), stakeUsdc: Number(row.stake_usdc), penaltyUsdc: Number(row.penalty_usdc), lives: Number(row.lives), createdAt: stamp(row.created_at) ?? Date.now(), members, status: row.status as SessionStatus, durationMinutes: Number(row.duration_minutes), startsAt: stamp(row.starts_at), endsAt: stamp(row.ends_at), endedAt: stamp(row.ended_at), endReason: row.end_reason ? String(row.end_reason) : undefined, chainReady: Boolean(row.chain_ready), groupTx: row.group_tx ? String(row.group_tx) : undefined, monitoringPolicy: { allowedResources: Array.isArray(row.allowed_resources) ? row.allowed_resources.map(String) : [], graceSeconds: Number(row.grace_seconds), sampleIntervalSeconds: Number(row.sample_interval_seconds) } };
+  return { code: String(row.code), creatorWallet: String(row.creator_wallet), stakeUsdc: Number(row.stake_usdc), penaltyUsdc: Number(row.penalty_usdc), createdAt: stamp(row.created_at) ?? Date.now(), members, status: row.status as SessionStatus, durationMinutes: Number(row.duration_minutes), startsAt: stamp(row.starts_at), endsAt: stamp(row.ends_at), endedAt: stamp(row.ended_at), endReason: row.end_reason ? String(row.end_reason) : undefined, chainReady: Boolean(row.chain_ready), groupTx: row.group_tx ? String(row.group_tx) : undefined, monitoringPolicy: { allowedResources: Array.isArray(row.allowed_resources) ? row.allowed_resources.map(String) : [], graceSeconds: Number(row.grace_seconds), sampleIntervalSeconds: Number(row.sample_interval_seconds) } };
 }
 async function loadDbSession(code: string, includeTokens = false): Promise<(Session & { tokens?: Record<string, string> }) | undefined> {
   const base = await dbQuery("SELECT * FROM sessions WHERE code = $1", [code.toUpperCase()]);
@@ -43,13 +43,13 @@ async function loadDbSession(code: string, includeTokens = false): Promise<(Sess
 export async function createSession(input: SessionInput): Promise<Session> {
   requireAvailableStore();
   let code = newCode(); while (sessions.has(code)) code = newCode();
-  const policy = { ...DEFAULT_POLICY, allowedResources: input.allowedResources ?? [] };
+  const policy = { ...DEFAULT_POLICY, allowedResources: input.allowedResources ?? [], graceSeconds: input.graceSeconds ?? DEFAULT_POLICY.graceSeconds };
   const durationMinutes = [25, 50, 90, 120].includes(input.durationMinutes ?? 50) ? input.durationMinutes ?? 50 : 50;
   // Safe default: deployments must explicitly opt into sending transactions.
-  const session: InternalSession = { code, creatorWallet: input.creatorWallet, stakeUsdc: input.stakeUsdc, penaltyUsdc: input.penaltyUsdc, lives: input.lives, createdAt: Date.now(), members: [], tokens: {}, status: "lobby", durationMinutes, chainReady: process.env.SOLANA_DRY_RUN !== "0", monitoringPolicy: policy };
+  const session: InternalSession = { code, creatorWallet: input.creatorWallet, stakeUsdc: input.stakeUsdc, penaltyUsdc: input.penaltyUsdc, createdAt: Date.now(), members: [], tokens: {}, status: "lobby", durationMinutes, chainReady: process.env.SOLANA_DRY_RUN !== "0", monitoringPolicy: policy };
   if (!databaseEnabled()) { sessions.set(code, session); return publicView(session); }
   try {
-    await dbQuery(`INSERT INTO sessions (code, creator_wallet, stake_usdc, penalty_usdc, lives, created_at, status, duration_minutes, chain_ready, allowed_resources, grace_seconds, sample_interval_seconds) VALUES ($1,$2,$3,$4,$5,to_timestamp($6 / 1000.0),$7,$8,$9,$10::jsonb,$11,$12)`, [code, input.creatorWallet, input.stakeUsdc, input.penaltyUsdc, input.lives, session.createdAt, "lobby", durationMinutes, session.chainReady, JSON.stringify(policy.allowedResources), policy.graceSeconds, policy.sampleIntervalSeconds]);
+    await dbQuery(`INSERT INTO sessions (code, creator_wallet, stake_usdc, penalty_usdc, created_at, status, duration_minutes, chain_ready, allowed_resources, grace_seconds, sample_interval_seconds) VALUES ($1,$2,$3,$4,to_timestamp($5 / 1000.0),$6,$7,$8,$9::jsonb,$10,$11)`, [code, input.creatorWallet, input.stakeUsdc, input.penaltyUsdc, session.createdAt, "lobby", durationMinutes, session.chainReady, JSON.stringify(policy.allowedResources), policy.graceSeconds, policy.sampleIntervalSeconds]);
   } catch {
     requireAvailableStore();
     sessions.set(code, session);
@@ -87,12 +87,12 @@ export async function joinSession(code: string, wallet: string, name: string) {
     const current = existing.members.find((member) => member.wallet === wallet);
     const membershipStatus: MembershipStatus = current?.membershipStatus ?? (existing.creatorWallet === wallet ? "approved" : "pending");
     const token = existing.tokens[wallet] || randomBytes(16).toString("hex");
-    await dbQuery(`INSERT INTO session_members (code, wallet, name, lives_left, membership_status, client_token) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (code, wallet) DO UPDATE SET name = EXCLUDED.name`, [normalized, wallet, name, existing.lives, membershipStatus, token]);
+    await dbQuery(`INSERT INTO session_members (code, wallet, name, membership_status, client_token) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (code, wallet) DO UPDATE SET name = EXCLUDED.name`, [normalized, wallet, name, membershipStatus, token]);
     const session = await loadDbSession(normalized); return session ? { clientToken: membershipStatus === "approved" ? token : undefined, membershipStatus, session } : undefined;
   }
   const session = sessions.get(normalized); if (!session || session.status !== "lobby") return undefined;
   let member = session.members.find((item) => item.wallet === wallet);
-  if (!member) { member = { wallet, name, livesLeft: session.lives, strikes: 0, slashedUsdc: 0, lastEventAt: 0, membershipStatus: session.creatorWallet === wallet ? "approved" : "pending" }; session.members.push(member); }
+  if (!member) { member = { wallet, name, strikes: 0, slashedUsdc: 0, lastEventAt: 0, membershipStatus: session.creatorWallet === wallet ? "approved" : "pending" }; session.members.push(member); }
   const token = (session.tokens[wallet] ??= randomBytes(16).toString("hex"));
   return { clientToken: member.membershipStatus === "approved" ? token : undefined, membershipStatus: member.membershipStatus, session: publicView(session) };
 }
@@ -160,12 +160,11 @@ export async function authMember(code: string, wallet: string, token: string | n
   const current = await expireSessionIfDue(code);
   return current ? { session: current, member: current.members.find((item) => item.wallet === wallet)! } : undefined;
 }
-async function mutateEvent(code: string, wallet: string, now: number, slash: boolean, penaltyUsdc = 0) {
+async function mutateEvent(code: string, wallet: string, now: number, penaltyUsdc: number) {
   requireAvailableStore();
-  if (databaseEnabled()) await dbQuery(slash ? "UPDATE session_members SET last_event_at = to_timestamp($1 / 1000.0), strikes = strikes + 1, slashed_usdc = slashed_usdc + $2 WHERE code = $3 AND wallet = $4" : "UPDATE session_members SET last_event_at = to_timestamp($1 / 1000.0), lives_left = lives_left - 1 WHERE code = $2 AND wallet = $3", slash ? [now, penaltyUsdc, code.toUpperCase(), wallet] : [now, code.toUpperCase(), wallet]);
-  else { const member = sessions.get(code.toUpperCase())?.members.find((item) => item.wallet === wallet); if (!member) return undefined; member.lastEventAt = now; if (slash) { member.strikes += 1; member.slashedUsdc += penaltyUsdc; } else member.livesLeft -= 1; }
+  if (databaseEnabled()) await dbQuery("UPDATE session_members SET last_event_at = to_timestamp($1 / 1000.0), strikes = strikes + 1, slashed_usdc = slashed_usdc + $2 WHERE code = $3 AND wallet = $4", [now, penaltyUsdc, code.toUpperCase(), wallet]);
+  else { const member = sessions.get(code.toUpperCase())?.members.find((item) => item.wallet === wallet); if (!member) return undefined; member.lastEventAt = now; member.strikes += 1; member.slashedUsdc += penaltyUsdc; }
   return (await getSession(code))?.members.find((item) => item.wallet === wallet);
 }
-export const recordForgiven = (code: string, wallet: string, now: number) => mutateEvent(code, wallet, now, false);
-export const recordSlash = (code: string, wallet: string, now: number, penaltyUsdc: number) => mutateEvent(code, wallet, now, true, penaltyUsdc);
+export const recordSlash = (code: string, wallet: string, now: number, penaltyUsdc: number) => mutateEvent(code, wallet, now, penaltyUsdc);
 export function resetMemoryStoreForTests() { sessions.clear(); }

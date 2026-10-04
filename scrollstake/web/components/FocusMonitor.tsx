@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PSM, type Worker } from "tesseract.js";
-import type { FaceLandmarker } from "@mediapipe/tasks-vision";
-import { classifyNativeAppTitle, classifyOcrText, classifyUnapprovedScreen } from "./screen-policy";
+import type { FaceLandmarker, ObjectDetector } from "@mediapipe/tasks-vision";
+import { classifyNativeAppTitle, classifyOcrText } from "./screen-policy";
 import { activeReasons, combinedReason, summarizeFocus, type FocusSignal } from "./focus-state";
+import { playDoomscrollAlert, playWarningTick } from "./session-client";
 
-type Props = { code: string; wallet: string; clientToken: string; allowedResources: string[]; graceSeconds?: number; sampleIntervalSeconds?: number; ended?: boolean; onEvent?: () => void };
-type EventResponse = { status: "forgiven" | "slashed" | "ignored" | "error"; livesLeft?: number; strikes?: number; error?: string };
+type Props = { code: string; wallet: string; userName: string; clientToken: string; allowedResources: string[]; graceSeconds?: number; sampleIntervalSeconds?: number; ended?: boolean; onEvent?: () => void };
+type EventResponse = { status: "slashed" | "ignored" | "error"; strikes?: number; error?: string; penaltyUsdc?: number; };
 type Landmark = { x: number; y: number; z: number };
 
 const JPEG_QUALITY = 0.65;
@@ -23,6 +24,7 @@ const COOLDOWN_MS = 15_000;
 const HEARTBEAT_MS = 15_000;
 const WASM_ROOT = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
+const OBJECT_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/latest/efficientdet_lite0.tflite";
 const NOSE = 1, FOREHEAD = 10, CHIN = 152, LEFT_TOP = 159, LEFT_BOTTOM = 145, LEFT_IRIS = 468, RIGHT_TOP = 386, RIGHT_BOTTOM = 374, RIGHT_IRIS = 473;
 
 const idleSignal = (detail: string): FocusSignal => ({ state: "idle", detail });
@@ -50,7 +52,30 @@ async function loadFaceLandmarker() {
   }
 }
 
-export default function FocusMonitor({ code, wallet, clientToken, allowedResources, graceSeconds = 10, sampleIntervalSeconds = 3, ended = false, onEvent }: Props) {
+async function loadObjectDetector() {
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    if (args.some((arg) => String(arg).includes("Created TensorFlow Lite XNNPACK delegate for CPU"))) return;
+    originalError(...args);
+  };
+  try {
+    const { ObjectDetector, FilesetResolver } = await import("@mediapipe/tasks-vision");
+    const fileset = await FilesetResolver.forVisionTasks(WASM_ROOT);
+    return await ObjectDetector.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: OBJECT_MODEL_URL },
+      runningMode: "VIDEO",
+      scoreThreshold: 0.35,
+    });
+  } catch (err) {
+    console.warn("ObjectDetector load fallback:", err);
+    return null;
+  } finally {
+    console.error = originalError;
+  }
+}
+
+
+export default function FocusMonitor({ code, wallet, userName, clientToken, allowedResources, graceSeconds = 3, sampleIntervalSeconds = 3, ended = false, onEvent }: Props) {
   const [signals, setSignals] = useState({ screen: idleSignal("Screen share is off"), camera: idleSignal("Camera is off") });
   const [started, setStarted] = useState(false);
   const [countdown, setCountdown] = useState(graceSeconds);
@@ -66,6 +91,7 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
   const ocrWorkerRef = useRef<Worker | null>(null);
   const titleOcrWorkerRef = useRef<Worker | null>(null);
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
+  const objectDetectorRef = useRef<ObjectDetector | null>(null);
   const screenTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cameraTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -84,6 +110,19 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
   const headHistoryRef = useRef<number[]>([]);
   const eyeHistoryRef = useRef<number[]>([]);
   const lastFaceRef = useRef(0);
+  const lastTickRef = useRef(graceSeconds);
+
+
+  useEffect(() => {
+    if (countdown < graceSeconds && countdown > 0) {
+      if (Math.ceil(countdown) !== lastTickRef.current) {
+        lastTickRef.current = Math.ceil(countdown);
+        void playWarningTick();
+      }
+    } else {
+      lastTickRef.current = graceSeconds;
+    }
+  }, [countdown, graceSeconds]);
 
   const setSignal = useCallback((kind: "screen" | "camera", next: FocusSignal) => {
     signalRef.current = { ...signalRef.current, [kind]: next };
@@ -108,7 +147,10 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
       });
       const body = await response.json() as EventResponse;
       if (!response.ok || body.status === "error") throw new Error(body.error ?? "The event API rejected the report.");
-      setEventResult(body.status === "slashed" ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}` : body.status === "forgiven" ? `Free pass used · ${body.livesLeft ?? 0} left` : "Duplicate event ignored");
+      setEventResult(body.status === "slashed" ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}` : "Duplicate event ignored");
+      if (body.status === "slashed" && body.penaltyUsdc) {
+        void playDoomscrollAlert(body.penaltyUsdc, userName);
+      }
       onEvent?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not report the distraction.");
@@ -172,7 +214,9 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
     screenStreamRef.current = null;
     cameraStreamRef.current = null;
     landmarkerRef.current?.close();
+    objectDetectorRef.current?.close();
     landmarkerRef.current = null;
+    objectDetectorRef.current = null;
     void ocrWorkerRef.current?.terminate();
     ocrWorkerRef.current = null;
     void titleOcrWorkerRef.current?.terminate();
@@ -239,15 +283,13 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
         const { data } = await ocrWorkerRef.current.recognize(canvasRef.current!);
         result = classifyOcrText(data.text, allowedResources);
       }
-      // This monitor is intentionally an allowlist. Once both recognition passes
-      // complete, an unknown or text-free foreground screen is not compliant.
-      result ??= classifyUnapprovedScreen();
+      // This monitor is now a blocklist.
       if (result?.classification === "disallowed" && result.confidence >= MIN_SCREEN_CONFIDENCE) {
         updateSignal("screen", { state: "violation", detail: result.reason, reason: `screen:${result.category}:${result.matchedResource ?? result.reason}` });
       } else if (result?.classification === "uncertain") {
         updateSignal("screen", { state: "degraded", detail: result.reason });
       } else {
-        updateSignal("screen", { state: "focused", detail: result.reason });
+        updateSignal("screen", { state: "focused", detail: "Screen activity looks good" });
       }
       setError("");
     } catch (cause) {
@@ -274,10 +316,36 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
   const analyzeCamera = useCallback(() => {
     const video = cameraVideoRef.current;
     const landmarker = landmarkerRef.current;
-    if (!video || !landmarker || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+    const objectDetector = objectDetectorRef.current;
+    if (!video || (!landmarker && !objectDetector) || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
     try {
-      const landmarks = landmarker.detectForVideo(video, performance.now()).faceLandmarks[0] as Landmark[] | undefined;
+      const timestamp = performance.now();
+
+      // Check for phone in frame via ObjectDetector
+      if (objectDetector) {
+        try {
+          const objResult = objectDetector.detectForVideo(video, timestamp);
+          const hasPhone = objResult.detections.some((det) =>
+            det.categories.some(
+              (cat) => ["cell phone", "mobile phone", "phone"].includes((cat.categoryName || "").toLowerCase()) && cat.score >= 0.35
+            )
+          );
+          if (hasPhone) {
+            updateSignal("camera", {
+              state: "violation",
+              detail: "Mobile phone detected in camera frame. Put your phone away.",
+              reason: "camera:phone_detected",
+            });
+            return;
+          }
+        } catch {
+          // ignore frame drop errors
+        }
+      }
+
+      const landmarks = landmarker ? (landmarker.detectForVideo(video, timestamp).faceLandmarks[0] as Landmark[] | undefined) : undefined;
       const reading = landmarks ? readFace(landmarks) : null;
+
       const now = Date.now();
       if (!reading) {
         if (baselineRef.current && now - lastFaceRef.current >= FACE_MISSING_MS) updateSignal("camera", { state: "violation", detail: "Face is no longer visible. Return to camera.", reason: "camera:face_missing" });
@@ -356,8 +424,13 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
       if (screenVideoRef.current) { screenVideoRef.current.srcObject = screenResult.value; await screenVideoRef.current.play(); }
       if (cameraVideoRef.current) { cameraVideoRef.current.srcObject = cameraResult.value; await cameraVideoRef.current.play(); }
       setSignal("screen", { state: "focused", detail: "Entire screen connected. Checking your study policy locally." });
-      setSignal("camera", { state: "calibrating", detail: "Loading local face detection…" });
-      landmarkerRef.current = await loadFaceLandmarker();
+      setSignal("camera", { state: "calibrating", detail: "Loading local face & phone detection…" });
+      const [landmarker, objectDetector] = await Promise.all([
+        loadFaceLandmarker(),
+        loadObjectDetector(),
+      ]);
+      landmarkerRef.current = landmarker;
+      objectDetectorRef.current = objectDetector;
       calibrationStartRef.current = null;
       calibrationHeadRef.current = [];
       calibrationEyeRef.current = [];
