@@ -7,6 +7,17 @@ export type WrappedCard = {
   stat: string;
   title: string;
   detail: string;
+  wallet?: string;
+};
+
+export type BoardRow = {
+  wallet: string;
+  name: string;
+  focusMinutes: number;
+  slips: number;
+  forgiven: number;
+  slashes: number;
+  lostUsdc: number;
 };
 
 export type WrappedStory = {
@@ -116,6 +127,26 @@ function people(session: Session, events: WrappedEvent[]): Person[] {
     }));
 }
 
+function slipCount(person: Person) {
+  return Math.max(person.events.filter((event) => event.kind !== "heartbeat").length, person.strikes);
+}
+
+/** Everyone in the room, most locked out first. */
+export function buildBoard(session: Session, events: WrappedEvent[]): BoardRow[] {
+  const elapsed = elapsedMinutes(session);
+  return people(session, events)
+    .map((person) => ({
+      wallet: person.wallet,
+      name: person.name,
+      focusMinutes: focusedMinutes(person, elapsed),
+      slips: slipCount(person),
+      forgiven: person.events.filter((event) => event.kind === "forgiven").length,
+      slashes: person.strikes,
+      lostUsdc: person.slashedUsdc,
+    }))
+    .sort((a, b) => b.slips - a.slips || b.lostUsdc - a.lostUsdc || a.focusMinutes - b.focusMinutes);
+}
+
 export function buildWrapped(session: Session, events: WrappedEvent[], viewerWallet: string): WrappedStory {
   const roster = people(session, events);
   const elapsed = elapsedMinutes(session);
@@ -177,6 +208,19 @@ export function buildWrapped(session: Session, events: WrappedEvent[], viewerWal
     title: clean.length === roster.length && roster.length > 0 ? "Nobody paid the phone." : clean.length === 0 ? "Everybody slipped." : `${clean.length} ${clean.length === 1 ? "person" : "people"} got through with zero slashes.`,
     detail: clean.length ? clean.map((person) => person.name).join(", ") + (clean.length === 1 ? " kept every dollar." : " kept every dollar.") : "Every approved member took at least one slash.",
   });
+
+  const lockedOut = [...roster].sort((a, b) => slipCount(b) - slipCount(a) || b.slashedUsdc - a.slashedUsdc)[0];
+  if (lockedOut && slipCount(lockedOut) > 0) {
+    const slips = slipCount(lockedOut);
+    cards.push({
+      id: "lockedout",
+      kicker: "Most locked out",
+      stat: lockedOut.name,
+      title: `${lockedOut.name} got caught ${slips} ${slips === 1 ? "time" : "times"}.`,
+      detail: lockedOut.slashedUsdc > 0 ? `${money(lockedOut.slashedUsdc)} went into the jar. The camera kept the receipts.` : "Free passes covered it. The camera still kept the receipts.",
+      wallet: lockedOut.wallet,
+    });
+  }
 
   const awardLines = [
     ranked[0] ? `Most Focused · ${ranked[0].name}` : "",

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { authMember, recordForgiven, recordSlash } from "@/lib/store";
 import { slashOnChain, toBaseUnits } from "@/lib/solana";
 import { logEvent } from "@/lib/db";
-import { rememberSessionEvent, type WrappedEvent } from "@/lib/session-events";
+import { cleanImage, rememberSessionEvent, saveSnapshot, type WrappedEvent } from "@/lib/session-events";
 import type { EventBody, EventResponse } from "@/lib/types";
 
 function eventTime(ts?: number) {
@@ -41,6 +41,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: "ignored", livesLeft: member.livesLeft, strikes: member.strikes } satisfies EventResponse);
   }
 
+  const caught = (kind: "forgiven" | "slashed") => saveSnapshot(session.code, {
+    wallet: member.wallet, name: member.name, kind, reason: body.reason, at: eventTime(body.ts),
+    camera: cleanImage(body.snapshot?.camera), screen: cleanImage(body.snapshot?.screen),
+  }).catch((error) => console.error("[wrapped] snapshot save failed", error));
+
   const now = Date.now();
   if (now - member.lastEventAt < MIN_GAP_MS) {
     return NextResponse.json({ status: "ignored", livesLeft: member.livesLeft, strikes: member.strikes } satisfies EventResponse);
@@ -49,6 +54,7 @@ export async function POST(req: Request) {
   if (member.livesLeft > 0) {
     const updated = await recordForgiven(session.code, member.wallet, now);
     remember(session.code, member.wallet, member.name, "forgiven", eventTime(body.ts), body.reason);
+    await caught("forgiven");
     await logEvent({ ...base, status: "forgiven", eventKind: "distraction" });
     return NextResponse.json({ status: "forgiven", livesLeft: updated?.livesLeft ?? member.livesLeft - 1, strikes: updated?.strikes ?? member.strikes } satisfies EventResponse);
   }
@@ -58,6 +64,7 @@ export async function POST(req: Request) {
     const txSig = await slashOnChain(session.code, member.wallet, toBaseUnits(session.penaltyUsdc));
     const updated = await recordSlash(session.code, member.wallet, now, session.penaltyUsdc);
     remember(session.code, member.wallet, member.name, "slashed", eventTime(body.ts), body.reason, session.penaltyUsdc);
+    await caught("slashed");
     await logEvent({ ...base, status: "slashed", eventKind: "distraction", penaltyUsdc: session.penaltyUsdc, txSig });
     return NextResponse.json({ status: "slashed", livesLeft: updated?.livesLeft ?? 0, strikes: updated?.strikes ?? member.strikes + 1, txSig } satisfies EventResponse);
   } catch (err) {

@@ -50,6 +50,19 @@ async function loadFaceLandmarker() {
   }
 }
 
+/** Small JPEG of a video frame for the Wrapped "caught" gallery. */
+function grabFrame(video: HTMLVideoElement | null, width: number) {
+  if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth) return undefined;
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(1, width / video.videoWidth);
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) return undefined;
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.6);
+}
+
 export default function FocusMonitor({ code, wallet, clientToken, allowedResources, graceSeconds = 10, sampleIntervalSeconds = 3, ended = false, onEvent }: Props) {
   const [signals, setSignals] = useState({ screen: idleSignal("Screen share is off"), camera: idleSignal("Camera is off") });
   const [started, setStarted] = useState(false);
@@ -100,11 +113,12 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
   const postEvent = useCallback(async (reason: string, durationSec: number) => {
     if (reportingRef.current) return;
     reportingRef.current = true;
+    const snapshot = { camera: grabFrame(cameraVideoRef.current, 320), screen: grabFrame(screenVideoRef.current, 480) };
     try {
       const response = await fetch("/api/events", {
         method: "POST",
         headers: { "content-type": "application/json", "x-client-token": clientToken },
-        body: JSON.stringify({ code, wallet, type: "distraction", source: "focus", reason, category: "combined", confidence: 0.9, durationSec: Math.round(durationSec * 10) / 10, ts: Math.floor(Date.now() / 1000) }),
+        body: JSON.stringify({ code, wallet, type: "distraction", source: "focus", reason, category: "combined", confidence: 0.9, durationSec: Math.round(durationSec * 10) / 10, ts: Math.floor(Date.now() / 1000), snapshot }),
       });
       const body = await response.json() as EventResponse;
       if (!response.ok || body.status === "error") throw new Error(body.error ?? "The event API rejected the report.");

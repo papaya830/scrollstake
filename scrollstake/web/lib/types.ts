@@ -39,5 +39,5 @@ export type Session = {
 };
 
 export type EventType = "distraction" | "heartbeat";
-export type EventBody = { code: string; wallet: string; type: EventType; source?: string; reason?: string; durationSec?: number; ts?: number };
+export type EventBody = { code: string; wallet: string; type: EventType; source?: string; reason?: string; durationSec?: number; ts?: number; snapshot?: { camera?: string; screen?: string } };
 export type EventResponse = { status: "forgiven" | "slashed" | "ignored" | "error"; livesLeft?: number; strikes?: number; txSig?: string; error?: string };

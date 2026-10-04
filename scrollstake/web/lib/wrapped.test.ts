@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Session } from "./types";
 import type { WrappedEvent } from "./session-events";
 import { eventsFromPulse } from "./session-events";
-import { applyCaptions, buildWrapped } from "./wrapped";
+import { applyCaptions, buildBoard, buildWrapped } from "./wrapped";
 
 const start = Date.parse("2026-10-04T15:00:00Z");
 
@@ -105,5 +105,20 @@ describe("session wrapped", () => {
     expect(next.find((card) => card.id === "money")).toMatchObject({ stat: "$0.00", title: "Your phone got nothing." });
     expect(next.find((card) => card.id === "locked")?.title).toBe(story.cards.find((card) => card.id === "locked")?.title);
     expect(next.find((card) => card.id === "locked")?.stat).toBe("25 min");
+  });
+
+  it("ranks the most locked out member first and names them on a card", () => {
+    const room = session([member("camille", "Camille", 0, 0), member("theo", "Theo", 2, 1)]);
+    const events: WrappedEvent[] = [
+      { wallet: "theo", kind: "forgiven", at: start + 60_000 },
+      { wallet: "theo", kind: "slashed", at: start + 120_000, penaltyUsdc: 0.5 },
+      { wallet: "theo", kind: "slashed", at: start + 180_000, penaltyUsdc: 0.5 },
+      { wallet: "camille", kind: "heartbeat", at: start + 60_000 },
+    ];
+    const board = buildBoard(room, events);
+    expect(board.map((row) => row.name)).toEqual(["Theo", "Camille"]);
+    expect(board[0]).toMatchObject({ slips: 3, forgiven: 1, slashes: 2, lostUsdc: 1 });
+    const card = buildWrapped(room, events, "camille").cards.find((item) => item.id === "lockedout");
+    expect(card).toMatchObject({ stat: "Theo", wallet: "theo" });
   });
 });

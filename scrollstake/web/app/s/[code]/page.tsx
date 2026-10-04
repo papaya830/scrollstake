@@ -150,7 +150,7 @@ export default function SessionPage() {
                 ended={roomOver}
                 onEvent={refresh}
               />
-            ) : status === "lobby" || !auth ? null : (
+            ) : !auth ? null : (
               <section className="card monitor">
                 <div className="monitor-main">
                   <strong>{auth.clientToken ? "Policy pending" : "Approval pending"}</strong>
