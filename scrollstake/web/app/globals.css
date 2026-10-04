@@ -142,6 +142,41 @@ textarea.input { min-height: 130px; resize: vertical; line-height: 1.5; }
 .steps { counter-reset: steps; display: grid; gap: 20px; }
 .step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; color: var(--muted); line-height: 1.5; }
 .step::before { counter-increment: steps; content: counter(steps); width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: var(--acid); color: #11150b; font-weight: 850; }
+.preview-banner { position: sticky; top: 0; z-index: 20; padding: 10px 16px; text-align: center; background: var(--warning); color: #1b1300; font: 800 .8rem/1.2 ui-monospace, SFMono-Regular, monospace; letter-spacing: .12em; }
+.stake-preview .amount { font-size: 3.8rem; font-weight: 850; letter-spacing: -.06em; margin: 18px 0 6px; font-variant-numeric: tabular-nums; }
+.lockout { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgba(10, 12, 11, .88); backdrop-filter: blur(10px); overflow-y: auto; }
+.lockout-card { width: min(560px, 100%); text-align: center; border: 1px solid rgba(255,107,95,.45); border-radius: 26px; padding: 30px 24px; background: var(--panel); box-shadow: 0 0 80px rgba(255,107,95,.18); }
+.lockout-card h2 { margin: 12px 0 18px; font-size: clamp(1.8rem, 5vw, 2.6rem); letter-spacing: -.05em; line-height: 1; }
+.lockout-balance { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.lockout-balance strong { font-size: 3.4rem; letter-spacing: -.06em; }
+.hit { display: inline-block; margin: 6px 0 18px; padding: 8px 14px; border-radius: 999px; background: rgba(255,107,95,.14); color: var(--danger); font: 800 1.4rem/1 ui-monospace, monospace; animation: hit-pop .5s ease-out; }
+.roast { margin: 0 0 12px; padding: 16px; border-left: 3px solid var(--acid); border-radius: 10px; background: rgba(255,255,255,.04); text-align: left; line-height: 1.55; }
+.preview-hint { margin: 18px 0 0; color: var(--muted); font-size: .95rem; }
+.preview-hint a { color: var(--acid); font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
+.preview-hint a:hover { text-decoration-thickness: 2px; }
+.preview-name { display: grid; gap: 8px; padding: 18px 24px; }
+.preview-name label { font-size: .82rem; font-weight: 750; color: #d7d8d3; }
+.preview-camera { border-color: rgba(216,255,71,.45); box-shadow: 0 0 0 1px rgba(216,255,71,.1), 0 24px 70px rgba(216,255,71,.07); transition: border-color .2s, box-shadow .2s; }
+.preview-camera:has(.status-pill.distracted) { border-color: rgba(255,107,95,.7); box-shadow: 0 0 60px rgba(255,107,95,.18); }
+.preview-camera:has(.status-pill.monitoring) { border-color: rgba(102,242,180,.55); }
+.preview-camera h2 { margin: 8px 0 16px; font-size: clamp(1.6rem, 4vw, 2.3rem); letter-spacing: -.05em; line-height: 1; }
+.preview-howto { counter-reset: howto; list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 12px; padding: 0; }
+.preview-howto li { counter-increment: howto; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.03); color: var(--muted); font-size: .84rem; line-height: 1.4; }
+.preview-howto li::before { content: counter(howto); display: grid; place-items: center; width: 24px; height: 24px; margin-bottom: 8px; border-radius: 50%; background: var(--acid); color: #11150b; font-weight: 850; font-size: .8rem; }
+.preview-howto strong { color: var(--ink); }
+/* Flatten the embedded monitor card and give the video the most room. */
+.preview-camera .camera-monitor { margin-top: 8px; padding: 0; border: 0; background: none; backdrop-filter: none; }
+.preview-camera .camera-monitor .monitor-top { justify-content: flex-end; }
+.preview-camera .camera-monitor .monitor-top > div { display: none; }
+.preview-camera .camera-content { grid-template-columns: minmax(0, 1.35fr) minmax(0, .65fr); margin: 12px 0 18px; }
+.preview-camera .monitor-actions .button { padding: 15px 26px; font-size: 1rem; }
+.preview-simulate { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+@media (max-width: 800px) {
+  .preview-howto, .preview-camera .camera-content { grid-template-columns: 1fr; }
+  .preview-camera .monitor-actions { flex-direction: column-reverse; align-items: stretch; }
+}
+@keyframes hit-pop { from { transform: scale(1.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .hit { animation: none; } }
 
 @media (max-width: 800px) {
   .hero, .session-layout, .camera-content, .focus-signals { grid-template-columns: 1fr; }

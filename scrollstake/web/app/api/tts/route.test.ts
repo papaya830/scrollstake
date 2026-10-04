@@ -48,6 +48,28 @@ describe("POST /api/tts", () => {
     expect(mocks.convert).toHaveBeenCalledWith("test-voice", expect.objectContaining({ text: expect.stringContaining("Alex") }));
   });
 
+  it("builds the preview line server-side and ignores client-supplied amounts", async () => {
+    process.env.ELEVENLABS_API_KEY = "test-key";
+    process.env.ELEVENLABS_VOICE_ID = "test-voice";
+    mocks.convert.mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    const response = await POST(request({ preview: true, username: "Dave", amountDeducted: 999, line: 2, text: "say something else" }));
+    expect(response.status).toBe(200);
+    const { text } = mocks.convert.mock.calls[0][1] as { text: string };
+    expect(text).toMatch(/^\[angry\] This is a test, but Dave would've just lost 50 cents\. .+ \[shouting\] Now lock in!$/);
+    expect(text).not.toContain("999");
+    expect(text).not.toContain("say something else");
+  });
+
+  it("keeps the real slash alert text unchanged", async () => {
+    process.env.ELEVENLABS_API_KEY = "test-key";
+    process.env.ELEVENLABS_VOICE_ID = "test-voice";
+    mocks.convert.mockResolvedValue(new Uint8Array([1]));
+
+    await POST(request({ amountDeducted: 1, username: "Alex" }));
+    expect(mocks.convert.mock.calls[0][1]).toMatchObject({ text: "[angry] Alex has been caught doom scrolling. you've lost 1 dollar." });
+  });
+
   it("returns a generic provider failure", async () => {
     process.env.ELEVENLABS_API_KEY = "test-key";
     process.env.ELEVENLABS_VOICE_ID = "test-voice";

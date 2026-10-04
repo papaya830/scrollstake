@@ -18,6 +18,9 @@ export default function Home() {
             <Link className="button primary" href="/create">Create a session</Link>
             <Link className="button" href="/join">Join with a code</Link>
           </div>
+          <p className="preview-hint">
+            Not ready to stake? <Link href="/preview">Try a 30-second preview, no wallet needed →</Link>
+          </p>
         </div>
         <aside className="stake-card">
           <span className="eyebrow">Example stake</span>
