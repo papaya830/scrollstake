@@ -4,7 +4,6 @@ export type SessionStatus = "lobby" | "live" | "ended";
 export type Member = {
   wallet: string;
   name: string;
-  livesLeft: number;
   strikes: number;
   slashedUsdc: number;
   lastEventAt: number;
@@ -24,7 +23,6 @@ export type Session = {
   creatorWallet: string;
   stakeUsdc: number;
   penaltyUsdc: number;
-  lives: number;
   createdAt: number;
   members: Member[];
   status: SessionStatus;
@@ -39,5 +37,7 @@ export type Session = {
 };
 
 export type EventType = "distraction" | "heartbeat";
+
 export type EventBody = { code: string; wallet: string; type: EventType; source?: string; reason?: string; durationSec?: number; ts?: number };
-export type EventResponse = { status: "forgiven" | "slashed" | "ignored" | "error"; livesLeft?: number; strikes?: number; txSig?: string; error?: string };
+export type EventResponse = { status: "slashed" | "ignored" | "error"; strikes?: number; txSig?: string; error?: string; penaltyUsdc?: number; };
+

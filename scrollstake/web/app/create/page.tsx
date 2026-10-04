@@ -4,10 +4,10 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseResources, policyKey, storeAuth } from "@/components/session-client";
-import { DEFAULT_APPROVED_RESOURCES } from "@/components/screen-policy";
+import { DEFAULT_BLOCKED_SITES } from "@/components/screen-policy";
 import { createGroupOnChain } from "@/lib/solana-client";
 
-const STARTER_RESOURCES = DEFAULT_APPROVED_RESOURCES.join("\n");
+const STARTER_RESOURCES = DEFAULT_BLOCKED_SITES.join("\n");
 
 export default function CreateSessionPage() {
   const router = useRouter();
@@ -24,7 +24,7 @@ export default function CreateSessionPage() {
     const allowedResources = parseResources(String(data.get("resources") ?? ""));
 
     try {
-      if (!wallet || !name || allowedResources.length === 0) throw new Error("Add your identity and at least one approved study resource.");
+      if (!wallet || !name || allowedResources.length === 0) throw new Error("Add your identity and at least one blocked site.");
       const created = await fetch("/api/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -32,7 +32,7 @@ export default function CreateSessionPage() {
           creatorWallet: wallet,
           stakeUsdc: Number(data.get("stake")),
           penaltyUsdc: Number(data.get("penalty")),
-          lives: Number(data.get("lives")),
+          graceSeconds: Number(data.get("graceSeconds")),
           durationMinutes: Number(data.get("duration")),
           allowedResources,
         }),
@@ -71,7 +71,7 @@ export default function CreateSessionPage() {
       </nav>
       <header className="page-head">
         <div><span className="eyebrow">New focus room</span><h1>Set the stakes.</h1></div>
-        <p className="lede">You choose what counts as studying. Everything else has to survive the grace period.</p>
+        <p className="lede">You choose what is blocked. Everything else is fair game.</p>
       </header>
       <form className="grid" onSubmit={submit}>
         <section className="card form-card">
@@ -82,13 +82,13 @@ export default function CreateSessionPage() {
           <div className="field-row">
             <div className="field"><label htmlFor="stake">Stake (USDC)</label><input className="input" id="stake" name="stake" type="number" min="1" step="0.5" defaultValue="10" required /></div>
             <div className="field"><label htmlFor="penalty">Penalty</label><input className="input" id="penalty" name="penalty" type="number" min="0.1" step="0.1" defaultValue="0.5" required /></div>
-            <div className="field"><label htmlFor="lives">Free passes</label><input className="input" id="lives" name="lives" type="number" min="0" max="10" defaultValue="2" required /></div>
+            <div className="field"><label htmlFor="graceSeconds">Grace period (sec)</label><input className="input" id="graceSeconds" name="graceSeconds" type="number" min="1" max="60" defaultValue="3" required /></div>
           </div>
           <div className="field"><label htmlFor="duration">Study duration</label><select className="input" id="duration" name="duration" defaultValue="50"><option value="25">25 minutes</option><option value="50">50 minutes</option><option value="90">90 minutes</option><option value="120">120 minutes</option></select><span className="fine">The creator starts this timer once every approved member has funded their stake.</span></div>
           <div className="field">
-            <label htmlFor="resources">Approved study resources</label>
+            <label htmlFor="resources">Blocked sites & apps</label>
             <textarea className="input" id="resources" name="resources" defaultValue={STARTER_RESOURCES} required />
-            <span className="fine">One domain, app, or recognizable course resource per line. Add your course or project name before the demo.</span>
+            <span className="fine">One domain or app per line.</span>
           </div>
           {error && <p className="error" role="alert">{error}</p>}
           <button className="button primary" disabled={busy}>{busy ? "Creating…" : "Create session"}</button>
@@ -97,8 +97,8 @@ export default function CreateSessionPage() {
           <span className="eyebrow">How monitoring works</span>
           <div className="steps" style={{ marginTop: 24 }}>
             <div className="step">Everyone shares their entire screen. The stream stays on their device.</div>
-            <div className="step">Text is checked locally against your approved-resource policy.</div>
-            <div className="step">A confirmed distraction gets a 10-second chance to disappear before an event is sent.</div>
+            <div className="step">Text is checked locally against your blocked sites policy.</div>
+            <div className="step">A confirmed distraction triggers an immediate penalty once the grace period expires. No free passes.</div>
           </div>
           <div className="notice" style={{ marginTop: 26 }}>Only one compressed frame from an emitted violation is eligible for evidence storage. Routine frames are discarded.</div>
         </aside>

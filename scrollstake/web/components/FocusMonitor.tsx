@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PSM, type Worker } from "tesseract.js";
 import type { FaceLandmarker } from "@mediapipe/tasks-vision";
-import { classifyNativeAppTitle, classifyOcrText, classifyUnapprovedScreen } from "./screen-policy";
+import { classifyNativeAppTitle, classifyOcrText } from "./screen-policy";
 import { activeReasons, combinedReason, summarizeFocus, type FocusSignal } from "./focus-state";
+import { playDoomscrollAlert, playWarningTick } from "./session-client";
 
-type Props = { code: string; wallet: string; clientToken: string; allowedResources: string[]; graceSeconds?: number; sampleIntervalSeconds?: number; ended?: boolean; onEvent?: () => void };
-type EventResponse = { status: "forgiven" | "slashed" | "ignored" | "error"; livesLeft?: number; strikes?: number; error?: string };
+type Props = { code: string; wallet: string; userName: string; clientToken: string; allowedResources: string[]; graceSeconds?: number; sampleIntervalSeconds?: number; ended?: boolean; onEvent?: () => void };
+type EventResponse = { status: "slashed" | "ignored" | "error"; strikes?: number; error?: string; penaltyUsdc?: number; };
 type Landmark = { x: number; y: number; z: number };
 
 const JPEG_QUALITY = 0.65;
@@ -50,7 +51,7 @@ async function loadFaceLandmarker() {
   }
 }
 
-export default function FocusMonitor({ code, wallet, clientToken, allowedResources, graceSeconds = 10, sampleIntervalSeconds = 3, ended = false, onEvent }: Props) {
+export default function FocusMonitor({ code, wallet, userName, clientToken, allowedResources, graceSeconds = 3, sampleIntervalSeconds = 3, ended = false, onEvent }: Props) {
   const [signals, setSignals] = useState({ screen: idleSignal("Screen share is off"), camera: idleSignal("Camera is off") });
   const [started, setStarted] = useState(false);
   const [countdown, setCountdown] = useState(graceSeconds);
@@ -84,6 +85,18 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
   const headHistoryRef = useRef<number[]>([]);
   const eyeHistoryRef = useRef<number[]>([]);
   const lastFaceRef = useRef(0);
+  const lastTickRef = useRef(graceSeconds);
+
+  useEffect(() => {
+    if (countdown < graceSeconds && countdown > 0) {
+      if (Math.ceil(countdown) !== lastTickRef.current) {
+        lastTickRef.current = Math.ceil(countdown);
+        void playWarningTick();
+      }
+    } else {
+      lastTickRef.current = graceSeconds;
+    }
+  }, [countdown, graceSeconds]);
 
   const setSignal = useCallback((kind: "screen" | "camera", next: FocusSignal) => {
     signalRef.current = { ...signalRef.current, [kind]: next };
@@ -108,7 +121,10 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
       });
       const body = await response.json() as EventResponse;
       if (!response.ok || body.status === "error") throw new Error(body.error ?? "The event API rejected the report.");
-      setEventResult(body.status === "slashed" ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}` : body.status === "forgiven" ? `Free pass used · ${body.livesLeft ?? 0} left` : "Duplicate event ignored");
+      setEventResult(body.status === "slashed" ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}` : "Duplicate event ignored");
+      if (body.status === "slashed" && body.penaltyUsdc) {
+        void playDoomscrollAlert(body.penaltyUsdc, userName);
+      }
       onEvent?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not report the distraction.");
@@ -239,15 +255,13 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
         const { data } = await ocrWorkerRef.current.recognize(canvasRef.current!);
         result = classifyOcrText(data.text, allowedResources);
       }
-      // This monitor is intentionally an allowlist. Once both recognition passes
-      // complete, an unknown or text-free foreground screen is not compliant.
-      result ??= classifyUnapprovedScreen();
+      // This monitor is now a blocklist.
       if (result?.classification === "disallowed" && result.confidence >= MIN_SCREEN_CONFIDENCE) {
         updateSignal("screen", { state: "violation", detail: result.reason, reason: `screen:${result.category}:${result.matchedResource ?? result.reason}` });
       } else if (result?.classification === "uncertain") {
         updateSignal("screen", { state: "degraded", detail: result.reason });
       } else {
-        updateSignal("screen", { state: "focused", detail: result.reason });
+        updateSignal("screen", { state: "focused", detail: "Screen activity looks good" });
       }
       setError("");
     } catch (cause) {

@@ -17,7 +17,7 @@ type Props = {
   onEvent?: () => void;
 };
 
-type EventResponse = { status: "forgiven" | "slashed" | "ignored" | "error"; livesLeft?: number; strikes?: number; error?: string };
+type EventResponse = { status: "slashed" | "ignored" | "error"; strikes?: number; error?: string };
 
 const JPEG_QUALITY = 0.65;
 const MAX_FRAME_WIDTH = 1280;
@@ -33,7 +33,7 @@ export default function ScreenMonitor({
   wallet,
   clientToken,
   allowedResources,
-  graceSeconds = 10,
+  graceSeconds = 3,
   sampleIntervalSeconds = 3,
   ended = false,
   onEvent,
@@ -88,9 +88,7 @@ export default function ScreenMonitor({
       if (!response.ok || body.status === "error") throw new Error(body.error ?? "The event API rejected the report.");
       const copy = body.status === "slashed"
         ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}`
-        : body.status === "forgiven"
-          ? `Free pass used · ${body.livesLeft ?? 0} left`
-          : "Duplicate event ignored";
+        : "Duplicate event ignored";
       setEventResult(copy);
       onEvent?.();
     } catch (cause) {

@@ -6,7 +6,7 @@ import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 type CameraState = "idle" | "requesting" | "calibrating" | "monitoring" | "distracted" | "lost" | "ended" | "degraded";
 type Landmark = { x: number; y: number; z: number };
 type Props = { code: string; wallet: string; clientToken: string; graceSeconds?: number; ended?: boolean; onEvent?: () => void };
-type EventResponse = { status: "forgiven" | "slashed" | "ignored" | "error"; livesLeft?: number; strikes?: number; error?: string };
+type EventResponse = { status: "slashed" | "ignored" | "error"; strikes?: number; error?: string };
 
 const CALIBRATION_MS = 3_000;
 const SAMPLE_MS = 200;
@@ -54,7 +54,7 @@ async function loadFaceLandmarker() {
 }
 
 /** Local-only MediaPipe look-down detector. Camera frames never leave the browser. */
-export default function CameraMonitor({ code, wallet, clientToken, graceSeconds = 10, ended = false, onEvent }: Props) {
+export default function CameraMonitor({ code, wallet, clientToken, graceSeconds = 3, ended = false, onEvent }: Props) {
   const [state, setState] = useState<CameraState>(ended ? "ended" : "idle");
   const [detail, setDetail] = useState("Camera is off");
   const [countdown, setCountdown] = useState(graceSeconds);
@@ -98,7 +98,7 @@ export default function CameraMonitor({ code, wallet, clientToken, graceSeconds 
       });
       const body = await response.json() as EventResponse;
       if (!response.ok || body.status === "error") throw new Error(body.error ?? "The event API rejected the camera report.");
-      setEventResult(body.status === "slashed" ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}` : body.status === "forgiven" ? `Free pass used · ${body.livesLeft ?? 0} left` : "Duplicate event ignored");
+      setEventResult(body.status === "slashed" ? `Stake slashed · ${body.strikes ?? 0} strike${body.strikes === 1 ? "" : "s"}` : "Duplicate event ignored");
       onEvent?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not report the camera interruption.");
