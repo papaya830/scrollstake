@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Member, SessionAuth, SessionView } from "./session-client";
+import { depositOnChain, withdrawOnChain } from "@/lib/solana-client";
 
 type Props = { session: SessionView; auth: SessionAuth; onRefresh: () => void | Promise<void> };
 type AdminAction = "approve" | "reject" | "remove" | "deposit" | "start" | "end";
@@ -24,11 +25,19 @@ export default function SessionAdminPanel({ session, auth, onRefresh }: Props) {
     try {
       const target = member ?? (action === "deposit" ? own : undefined);
       const path = target && action !== "start" && action !== "end" ? `/api/sessions/${encodeURIComponent(session.code)}/members/${encodeURIComponent(target.wallet)}` : `/api/sessions/${encodeURIComponent(session.code)}/${action}`;
-      const body = action === "deposit" ? { action, txSig: `DRYRUN_${Date.now()}` } : action === "end" ? { actorWallet: auth.wallet, reason: endReason } : action === "start" ? { actorWallet: auth.wallet } : { action, actorWallet: auth.wallet };
+      let txSig: string | undefined;
+      if (action === "deposit") {
+        if (session.groupTx) {
+          const chain = await depositOnChain(session.code, session.stakeUsdc);
+          if (chain.wallet !== auth.wallet) throw new Error("The connected wallet must match the session wallet.");
+          txSig = chain.txSig;
+        } else txSig = `DRYRUN_${Date.now()}`;
+      }
+      const body = action === "deposit" ? { action, txSig } : action === "end" ? { actorWallet: auth.wallet, reason: endReason } : action === "start" ? { actorWallet: auth.wallet } : { action, actorWallet: auth.wallet };
       const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) });
       const result = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "The session action could not be completed.");
-      setMessage(action === "deposit" ? "Demo stake funded. You are ready to start." : action === "start" ? "Session started and rules are locked." : action === "end" ? "Session ended; members may withdraw their remaining stake." : "Member status updated.");
+      setMessage(action === "deposit" ? (session.groupTx ? "On-chain stake confirmed. You are ready to start." : "Demo stake funded. You are ready to start.") : action === "start" ? "Session started and rules are locked." : action === "end" ? "Session ended; members may withdraw their remaining stake." : "Member status updated.");
       await onRefresh();
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : "The session action could not be completed."); }
     finally { setBusy(null); }
@@ -40,7 +49,7 @@ export default function SessionAdminPanel({ session, auth, onRefresh }: Props) {
     void request("end", undefined, reason);
   }
 
-  if (session.status === "ended") return <section className="card"><span className="eyebrow">Session complete</span><h2 style={{ marginBottom: 8 }}>Withdraw your remaining stake.</h2><p className="muted">{session.endReason ? `Ended: ${session.endReason}` : "The scheduled study timer has finished."}</p></section>;
+  if (session.status === "ended") return <section className="card"><span className="eyebrow">Session complete</span><h2 style={{ marginBottom: 8 }}>Withdraw your remaining stake.</h2><p className="muted">{session.endReason ? `Ended: ${session.endReason}` : "The scheduled study timer has finished."}</p>{session.groupTx && <button className="button primary" disabled={busy !== null} onClick={() => { setBusy("deposit"); setMessage(""); void withdrawOnChain(session.code).then(() => setMessage("Withdrawal confirmed on devnet.")).catch((cause: unknown) => setMessage(cause instanceof Error ? cause.message : "Withdrawal failed.")).finally(() => setBusy(null)); }}>{busy === "deposit" ? "Withdrawing…" : "Withdraw remaining stake"}</button>}{message && <p className={message.includes("failed") ? "error" : "event-toast"}>{message}</p>}</section>;
   if (session.status === "live") return isCreator
     ? <section className="card admin-panel"><span className="eyebrow">Creator controls</span><h2 style={{ margin: "8px 0" }}>Room is live.</h2><p className="muted">Ending stops monitoring for everyone and unlocks withdrawals.</p>{message && <p className={message.includes("could not") || message.includes("cannot") ? "error" : "event-toast"}>{message}</p>}<button className="button danger" disabled={busy !== null} onClick={requestEnd}>{busy === "end" ? "Ending…" : "End session"}</button></section>
     : <section className="card lobby-state"><span className="eyebrow">Session live</span><h2>Stay locked in.</h2><p className="muted">The creator can end the room early. The timer ends it automatically.</p></section>;

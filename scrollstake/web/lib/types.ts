@@ -33,6 +33,8 @@ export type Session = {
   endsAt?: number;
   endedAt?: number;
   endReason?: string;
+  chainReady?: boolean;
+  groupTx?: string;
   monitoringPolicy: MonitoringPolicy;
 };
 

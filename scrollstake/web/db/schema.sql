@@ -12,10 +12,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   ends_at TIMESTAMPTZ,
   ended_at TIMESTAMPTZ,
   end_reason TEXT,
+  chain_ready BOOLEAN NOT NULL DEFAULT false,
+  group_tx TEXT,
   allowed_resources JSONB NOT NULL DEFAULT '[]'::jsonb,
   grace_seconds INTEGER NOT NULL DEFAULT 10,
   sample_interval_seconds INTEGER NOT NULL DEFAULT 3
 );
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS chain_ready BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS group_tx TEXT;
 
 CREATE TABLE IF NOT EXISTS session_members (
   code TEXT NOT NULL REFERENCES sessions(code) ON DELETE CASCADE,

@@ -8,6 +8,8 @@ import FocusPulse from "@/components/FocusPulse";
 import SessionAdminPanel from "@/components/SessionAdminPanel";
 import { formatTimeRemaining, loadAuth, policyKey, storeAuth, type SessionAuth, type SessionView } from "@/components/session-client";
 
+const cachedSessionKey = (code: string) => `scrollstake:${code.toUpperCase()}:session`;
+
 export default function SessionPage() {
   const params = useParams<{ code: string }>();
   const code = String(params.code ?? "").toUpperCase();
@@ -24,6 +26,7 @@ export default function SessionPage() {
       if (!response.ok) throw new Error(response.status === 404 ? "Session not found." : "Could not refresh the session.");
       const view = await response.json() as SessionView;
       setSession(view);
+      sessionStorage.setItem(cachedSessionKey(code), JSON.stringify(view));
       const stored = loadAuth(code);
       const own = stored ? view.members.find((member) => member.wallet === stored.wallet) : undefined;
       if (stored && own && own.membershipStatus !== stored.membershipStatus) {
@@ -47,6 +50,14 @@ export default function SessionPage() {
       }
       setError("");
     } catch (cause) {
+      try {
+        const cached = sessionStorage.getItem(cachedSessionKey(code));
+        if (cached) {
+          setSession(JSON.parse(cached) as SessionView);
+          setError("Backend unavailable — showing this browser's last saved session. Funding, room changes, and slashes are disabled until it reconnects.");
+          return;
+        }
+      } catch { /* cache is optional */ }
       setError(cause instanceof Error ? cause.message : "Could not load the session.");
     }
   }, [code]);

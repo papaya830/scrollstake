@@ -26,6 +26,8 @@ export type SessionView = {
   endsAt?: number;
   endedAt?: number;
   endReason?: string;
+  chainReady?: boolean;
+  groupTx?: string;
   monitoringPolicy?: { allowedResources: string[]; graceSeconds?: number; sampleIntervalSeconds?: number };
 };
 

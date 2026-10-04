@@ -16,7 +16,7 @@ function memberFromRow(row: Record<string, unknown>): Member {
   return { wallet: String(row.wallet), name: String(row.name), livesLeft: Number(row.lives_left), strikes: Number(row.strikes), slashedUsdc: Number(row.slashed_usdc), lastEventAt: stamp(row.last_event_at) ?? 0, membershipStatus: row.membership_status as MembershipStatus, depositedAt: stamp(row.deposited_at), depositTx: row.deposit_tx ? String(row.deposit_tx) : undefined };
 }
 function sessionFromRow(row: Record<string, unknown>, members: Member[]): Session {
-  return { code: String(row.code), creatorWallet: String(row.creator_wallet), stakeUsdc: Number(row.stake_usdc), penaltyUsdc: Number(row.penalty_usdc), lives: Number(row.lives), createdAt: stamp(row.created_at) ?? Date.now(), members, status: row.status as SessionStatus, durationMinutes: Number(row.duration_minutes), startsAt: stamp(row.starts_at), endsAt: stamp(row.ends_at), endedAt: stamp(row.ended_at), endReason: row.end_reason ? String(row.end_reason) : undefined, monitoringPolicy: { allowedResources: Array.isArray(row.allowed_resources) ? row.allowed_resources.map(String) : [], graceSeconds: Number(row.grace_seconds), sampleIntervalSeconds: Number(row.sample_interval_seconds) } };
+  return { code: String(row.code), creatorWallet: String(row.creator_wallet), stakeUsdc: Number(row.stake_usdc), penaltyUsdc: Number(row.penalty_usdc), lives: Number(row.lives), createdAt: stamp(row.created_at) ?? Date.now(), members, status: row.status as SessionStatus, durationMinutes: Number(row.duration_minutes), startsAt: stamp(row.starts_at), endsAt: stamp(row.ends_at), endedAt: stamp(row.ended_at), endReason: row.end_reason ? String(row.end_reason) : undefined, chainReady: Boolean(row.chain_ready), groupTx: row.group_tx ? String(row.group_tx) : undefined, monitoringPolicy: { allowedResources: Array.isArray(row.allowed_resources) ? row.allowed_resources.map(String) : [], graceSeconds: Number(row.grace_seconds), sampleIntervalSeconds: Number(row.sample_interval_seconds) } };
 }
 async function loadDbSession(code: string, includeTokens = false): Promise<(Session & { tokens?: Record<string, string> }) | undefined> {
   const base = await dbQuery("SELECT * FROM sessions WHERE code = $1", [code.toUpperCase()]);
@@ -33,9 +33,10 @@ export async function createSession(input: SessionInput): Promise<Session> {
   let code = newCode(); while (sessions.has(code)) code = newCode();
   const policy = { ...DEFAULT_POLICY, allowedResources: input.allowedResources ?? [] };
   const durationMinutes = [25, 50, 90, 120].includes(input.durationMinutes ?? 50) ? input.durationMinutes ?? 50 : 50;
-  const session: InternalSession = { code, creatorWallet: input.creatorWallet, stakeUsdc: input.stakeUsdc, penaltyUsdc: input.penaltyUsdc, lives: input.lives, createdAt: Date.now(), members: [], tokens: {}, status: "lobby", durationMinutes, monitoringPolicy: policy };
+  // Safe default: deployments must explicitly opt into sending transactions.
+  const session: InternalSession = { code, creatorWallet: input.creatorWallet, stakeUsdc: input.stakeUsdc, penaltyUsdc: input.penaltyUsdc, lives: input.lives, createdAt: Date.now(), members: [], tokens: {}, status: "lobby", durationMinutes, chainReady: process.env.SOLANA_DRY_RUN !== "0", monitoringPolicy: policy };
   if (!databaseEnabled()) { sessions.set(code, session); return publicView(session); }
-  await dbQuery(`INSERT INTO sessions (code, creator_wallet, stake_usdc, penalty_usdc, lives, created_at, status, duration_minutes, allowed_resources, grace_seconds, sample_interval_seconds) VALUES ($1,$2,$3,$4,$5,to_timestamp($6 / 1000.0),$7,$8,$9::jsonb,$10,$11)`, [code, input.creatorWallet, input.stakeUsdc, input.penaltyUsdc, input.lives, session.createdAt, "lobby", durationMinutes, JSON.stringify(policy.allowedResources), policy.graceSeconds, policy.sampleIntervalSeconds]);
+  await dbQuery(`INSERT INTO sessions (code, creator_wallet, stake_usdc, penalty_usdc, lives, created_at, status, duration_minutes, chain_ready, allowed_resources, grace_seconds, sample_interval_seconds) VALUES ($1,$2,$3,$4,$5,to_timestamp($6 / 1000.0),$7,$8,$9,$10::jsonb,$11,$12)`, [code, input.creatorWallet, input.stakeUsdc, input.penaltyUsdc, input.lives, session.createdAt, "lobby", durationMinutes, session.chainReady, JSON.stringify(policy.allowedResources), policy.graceSeconds, policy.sampleIntervalSeconds]);
   return publicView(session);
 }
 async function readSession(code: string): Promise<Session | undefined> {
@@ -89,15 +90,22 @@ export async function updateMembership(code: string, actorWallet: string, wallet
 }
 export async function markDeposit(code: string, wallet: string, txSig: string) {
   const session = await getSession(code), member = session?.members.find((item) => item.wallet === wallet);
-  if (!session || session.status !== "lobby" || !member || member.membershipStatus !== "approved" || !txSig) return undefined;
+  if (!session || session.status !== "lobby" || !session.chainReady || !member || member.membershipStatus !== "approved" || !txSig) return undefined;
   const now = Date.now();
   if (databaseEnabled()) await dbQuery("UPDATE session_members SET deposited_at = to_timestamp($1 / 1000.0), deposit_tx = $2 WHERE code = $3 AND wallet = $4", [now, txSig, code.toUpperCase(), wallet]);
   else { const mutable = sessions.get(code.toUpperCase())!.members.find((item) => item.wallet === wallet)!; mutable.depositedAt = now; mutable.depositTx = txSig; }
   return getSession(code);
 }
+export async function markChainReady(code: string, actorWallet: string, txSig: string) {
+  const session = await getSession(code);
+  if (!session || session.status !== "lobby" || session.creatorWallet !== actorWallet || !txSig) return undefined;
+  if (databaseEnabled()) await dbQuery("UPDATE sessions SET chain_ready = true, group_tx = $1 WHERE code = $2", [txSig, code.toUpperCase()]);
+  else Object.assign(sessions.get(code.toUpperCase())!, { chainReady: true, groupTx: txSig });
+  return getSession(code);
+}
 export async function startSession(code: string, actorWallet: string) {
   const session = await getSession(code), approved = session?.members.filter((member) => member.membershipStatus === "approved") ?? [];
-  if (!session || session.status !== "lobby" || session.creatorWallet !== actorWallet || !approved.length || approved.some((member) => !member.depositedAt)) return undefined;
+  if (!session || session.status !== "lobby" || session.creatorWallet !== actorWallet || !session.chainReady || !approved.length || approved.some((member) => !member.depositedAt)) return undefined;
   const startsAt = Date.now(), endsAt = startsAt + session.durationMinutes * 60_000;
   if (databaseEnabled()) await dbQuery("UPDATE sessions SET status = 'live', starts_at = to_timestamp($1 / 1000.0), ends_at = to_timestamp($2 / 1000.0) WHERE code = $3 AND status = 'lobby'", [startsAt, endsAt, code.toUpperCase()]);
   else Object.assign(sessions.get(code.toUpperCase())!, { status: "live", startsAt, endsAt }); return getSession(code);
