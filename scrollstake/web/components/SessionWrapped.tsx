@@ -74,9 +74,11 @@ export default function SessionWrapped({ code, wallet }: { code: string; wallet:
       <div className="wrapped-nav">
         <button className="button" type="button" onClick={() => step(-1)}>Back</button>
         <span className="fine">{index + 1} / {count}{story.source === "tiger" ? " · Tiger Data" : ""}{story.narratedBy === "gemini" ? " · Gemini" : ""}</span>
-        <button className="button primary" type="button" onClick={() => step(1)}>Next</button>
+        <div className="wrapped-actions">
+          <button className="button" type="button" onClick={() => void copyRecap()}>{copied ? "Copied" : "Copy"}</button>
+          <button className="button primary" type="button" onClick={() => step(1)}>Next</button>
+        </div>
       </div>
-      <button className="button wrapped-share" type="button" onClick={() => void copyRecap()}>{copied ? "Copied" : "Copy recap"}</button>
     </section>
   );
 }

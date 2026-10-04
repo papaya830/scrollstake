@@ -66,7 +66,7 @@ export default function CreateSessionPage() {
   return (
     <main className="shell page">
       <nav className="nav">
-        <Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link>
+        <Link className="brand" href="/">ScrollStake</Link>
         <Link className="button" href="/join">Join instead</Link>
       </nav>
       <header className="page-head">

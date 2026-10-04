@@ -90,7 +90,7 @@ export default function SessionPage() {
   if (!session && !error) {
     return (
       <main className="shell page">
-        <nav className="nav"><Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link></nav>
+        <nav className="nav"><Link className="brand" href="/">ScrollStake</Link></nav>
         <section className="card">Loading session…</section>
       </main>
     );
@@ -99,7 +99,7 @@ export default function SessionPage() {
   if (!session) {
     return (
       <main className="shell page">
-        <nav className="nav"><Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link></nav>
+        <nav className="nav"><Link className="brand" href="/">ScrollStake</Link></nav>
         <section className="card" style={{ maxWidth: 650, margin: "12vh auto", textAlign: "center" }}>
           <span className="eyebrow">Session {code}</span>
           <h1 style={{ fontSize: "3rem", letterSpacing: "-.06em" }}>{error || "Session not found."}</h1>
@@ -112,7 +112,7 @@ export default function SessionPage() {
   if (!viewer) {
     return (
       <main className="shell page">
-        <nav className="nav"><Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link></nav>
+        <nav className="nav"><Link className="brand" href="/">ScrollStake</Link></nav>
         <section className="card" style={{ maxWidth: 650, margin: "12vh auto", textAlign: "center" }}>
           <span className="eyebrow">Session {code}</span>
           <h1 style={{ fontSize: "3rem", letterSpacing: "-.06em" }}>Join before monitoring.</h1>
@@ -126,17 +126,30 @@ export default function SessionPage() {
   return (
     <main className="shell page">
       <nav className="nav">
-        <Link className="brand" href="/"><span className="brand-mark">●</span> ScrollStake</Link>
+        <Link className="brand" href="/">ScrollStake</Link>
         <span className="eyebrow">Room {code}</span>
       </nav>
-      <header className="page-head">
-        <div><span className="eyebrow">{status === "lobby" ? "Session lobby" : status === "ended" || scheduledEndReached ? "Session complete" : "Live study room"}</span><h1>{status === "lobby" ? "Build the room." : status === "ended" || scheduledEndReached ? "Time is up." : "Stay expensive."}</h1></div>
-        <div style={{ textAlign: "right" }}><div className="muted">{timeRemaining && status === "live" ? `Time left · ${timeRemaining}` : auth ? "Signed in as" : "Room recap"}</div><strong>{viewer.name}</strong></div>
+      <header className={roomOver ? "page-head recap-head" : "page-head"}>
+        <div><span className="eyebrow">{status === "lobby" ? "Session lobby" : roomOver ? "Session complete" : "Live study room"}</span><h1>{status === "lobby" ? "Build the room." : roomOver ? "Your Wrapped" : "Stay expensive."}</h1></div>
+        <div className="page-meta"><div className="muted">{timeRemaining && status === "live" ? `Time left · ${timeRemaining}` : auth ? "Signed in as" : "Room recap"}</div><strong>{viewer.name}</strong></div>
       </header>
       {error && <p className="notice" role="alert">{error}</p>}
+      {roomOver ? (
+        <div className="recap">
+          <SessionWrapped code={code} wallet={viewer.wallet} />
+          <section className="card recap-people">
+            {session.members.filter((member) => member.membershipStatus !== "removed" && member.membershipStatus !== "rejected").map((member) => (
+              <div className="recap-person" key={member.wallet}>
+                <strong>{member.name}</strong>
+                <span>{member.strikes ? `${member.strikes} strike${member.strikes === 1 ? "" : "s"} · $${member.slashedUsdc.toFixed(2)}` : "Clean"}</span>
+              </div>
+            ))}
+          </section>
+          {auth && session.groupTx ? <SessionAdminPanel session={session} auth={auth} onRefresh={refresh} /> : null}
+        </div>
+      ) : (
       <div className="session-layout">
           <div>
-            {roomOver && <SessionWrapped code={code} wallet={viewer.wallet} />}
             {auth && <SessionAdminPanel session={session} auth={auth} onRefresh={refresh} />}
             <FocusPulse code={code} live={status === "live" && !scheduledEndReached} />
             {status === "lobby" || !auth ? null : allowedResources.length > 0 && auth.clientToken ? (
@@ -147,7 +160,7 @@ export default function SessionPage() {
                 allowedResources={allowedResources}
                 graceSeconds={session.monitoringPolicy?.graceSeconds ?? 10}
                 sampleIntervalSeconds={session.monitoringPolicy?.sampleIntervalSeconds ?? 3}
-                ended={roomOver}
+                ended={false}
                 onEvent={refresh}
               />
             ) : status === "lobby" || !auth ? null : (
@@ -173,7 +186,7 @@ export default function SessionPage() {
                 {session.members.map((member) => (
                   <div className="member" key={member.wallet}>
                     <div className="member-head"><span>{member.name}</span><span>{"♥".repeat(member.livesLeft) || "—"}</span></div>
-                    <div className="member-stats"><span>{member.strikes} strikes</span><span>${member.slashedUsdc.toFixed(2)} slashed</span></div>
+                    <div className="member-stats"><span>{member.strikes} strike{member.strikes === 1 ? "" : "s"}</span><span>${member.slashedUsdc.toFixed(2)} slashed</span></div>
                   </div>
                 ))}
               </div>
@@ -183,6 +196,7 @@ export default function SessionPage() {
             </section>
           </aside>
         </div>
+      )}
     </main>
   );
 }
