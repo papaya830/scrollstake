@@ -7,7 +7,7 @@ import FocusMonitor from "@/components/FocusMonitor";
 import FocusPulse from "@/components/FocusPulse";
 import SessionAdminPanel from "@/components/SessionAdminPanel";
 import SessionWrapped from "@/components/SessionWrapped";
-import { formatTimeRemaining, loadAuth, policyKey, storeAuth, type SessionAuth, type SessionView } from "@/components/session-client";
+import { formatTimeRemaining, loadAuth, playDoomscrollAlert, policyKey, storeAuth, type SessionAuth, type SessionView } from "@/components/session-client";
 
 const cachedSessionKey = (code: string) => `scrollstake:${code.toUpperCase()}:session`;
 
@@ -20,6 +20,7 @@ export default function SessionPage() {
   const [error, setError] = useState("");
   const [now, setNow] = useState(Date.now());
   const tokenRequestInFlight = useRef(false);
+  const prevMembersRef = useRef<Record<string, number>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -76,6 +77,18 @@ export default function SessionPage() {
     const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => { clearInterval(interval); clearInterval(clock); };
   }, [code, refresh]);
+
+  useEffect(() => {
+    if (!session || !auth) return;
+    const currentMembers = session.members;
+    currentMembers.forEach(member => {
+      const prevStrikes = prevMembersRef.current[member.wallet];
+      if (prevStrikes !== undefined && member.strikes > prevStrikes && member.wallet !== auth.wallet) {
+        void playDoomscrollAlert(session.penaltyUsdc, member.name);
+      }
+      prevMembersRef.current[member.wallet] = member.strikes;
+    });
+  }, [session, auth]);
 
   const allowedResources = useMemo(
     () => session?.monitoringPolicy?.allowedResources?.length ? session.monitoringPolicy.allowedResources : localPolicy,
@@ -143,9 +156,10 @@ export default function SessionPage() {
               <FocusMonitor
                 code={code}
                 wallet={auth.wallet}
+                userName={auth.name}
                 clientToken={auth.clientToken}
                 allowedResources={allowedResources}
-                graceSeconds={session.monitoringPolicy?.graceSeconds ?? 10}
+                graceSeconds={session.monitoringPolicy?.graceSeconds ?? 3}
                 sampleIntervalSeconds={session.monitoringPolicy?.sampleIntervalSeconds ?? 3}
                 ended={roomOver}
                 onEvent={refresh}
@@ -155,16 +169,16 @@ export default function SessionPage() {
                 <div className="monitor-main">
                   <strong>{auth.clientToken ? "Policy pending" : "Approval pending"}</strong>
                   <p>{auth.clientToken ? "The creator&apos;s allowlist is not available from the session API yet. Monitoring stays off so an unknown policy cannot cost you money." : "The creator must approve your request before a monitoring token is issued."}</p>
-                  <div className="notice">The lifecycle API must return approved membership and <code>monitoringPolicy.allowedResources</code> before monitoring can start.</div>
+                  <div className="notice">The lifecycle API must return approved membership and <code>monitoringPolicy.blockedSites</code> before monitoring can start.</div>
                 </div>
               </section>
             )}
           </div>
           <aside style={{ display: "grid", gap: 18 }}>
             <section className="card">
-              <span className="eyebrow">Approved resources</span>
+              <span className="eyebrow">Blocked sites</span>
               <div className="policy-list">
-                {allowedResources.length ? allowedResources.map((resource) => <div className="policy-chip" key={resource}>{resource}</div>) : <p className="muted">No policy received.</p>}
+                {allowedResources.length ? <p className="muted">{allowedResources.length} site{allowedResources.length === 1 ? "" : "s"} blocked by creator</p> : <p className="muted">No policy received.</p>}
               </div>
             </section>
             <section className="card">
@@ -172,7 +186,7 @@ export default function SessionPage() {
               <div className="member-list">
                 {session.members.map((member) => (
                   <div className="member" key={member.wallet}>
-                    <div className="member-head"><span>{member.name}</span><span>{"♥".repeat(member.livesLeft) || "—"}</span></div>
+                  <div className="member-head"><span>{member.name}</span><span>{"♥".repeat(member.livesLeft) || "—"}</span></div>
                     <div className="member-stats"><span>{member.strikes} strikes</span><span>${member.slashedUsdc.toFixed(2)} slashed</span></div>
                   </div>
                 ))}

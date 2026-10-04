@@ -3,7 +3,7 @@ import { databaseEnabled, dbQuery, persistentDatabaseRequired } from "./db";
 import type { Member, MembershipStatus, MonitoringPolicy, Session, SessionStatus } from "./types";
 
 type InternalSession = Session & { tokens: Record<string, string> };
-type SessionInput = { creatorWallet: string; stakeUsdc: number; penaltyUsdc: number; lives: number; durationMinutes?: number; allowedResources?: string[] };
+type SessionInput = { creatorWallet: string; stakeUsdc: number; penaltyUsdc: number; lives: number; durationMinutes?: number; allowedResources?: string[]; graceSeconds?: number };
 const g = globalThis as unknown as { __scrollstake?: Map<string, InternalSession> };
 const sessions = (g.__scrollstake ??= new Map<string, InternalSession>());
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -43,7 +43,7 @@ async function loadDbSession(code: string, includeTokens = false): Promise<(Sess
 export async function createSession(input: SessionInput): Promise<Session> {
   requireAvailableStore();
   let code = newCode(); while (sessions.has(code)) code = newCode();
-  const policy = { ...DEFAULT_POLICY, allowedResources: input.allowedResources ?? [] };
+  const policy = { ...DEFAULT_POLICY, allowedResources: input.allowedResources ?? [], graceSeconds: input.graceSeconds ?? DEFAULT_POLICY.graceSeconds };
   const durationMinutes = [25, 50, 90, 120].includes(input.durationMinutes ?? 50) ? input.durationMinutes ?? 50 : 50;
   // Safe default: deployments must explicitly opt into sending transactions.
   const session: InternalSession = { code, creatorWallet: input.creatorWallet, stakeUsdc: input.stakeUsdc, penaltyUsdc: input.penaltyUsdc, lives: input.lives, createdAt: Date.now(), members: [], tokens: {}, status: "lobby", durationMinutes, chainReady: process.env.SOLANA_DRY_RUN !== "0", monitoringPolicy: policy };

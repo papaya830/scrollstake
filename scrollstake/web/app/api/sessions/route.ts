@@ -14,6 +14,7 @@ export async function POST(req: Request) {
       lives: Number(b.lives ?? 2),
       durationMinutes: Number(b.durationMinutes ?? 50),
       allowedResources: Array.isArray(b.allowedResources) ? b.allowedResources.filter((item: unknown) => typeof item === "string") : [],
+      graceSeconds: Number(b.graceSeconds ?? 3),
     });
     return NextResponse.json({ code: session.code });
   } catch (error) {

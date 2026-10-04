@@ -59,7 +59,13 @@ export async function POST(req: Request) {
     const updated = await recordSlash(session.code, member.wallet, now, session.penaltyUsdc);
     remember(session.code, member.wallet, member.name, "slashed", eventTime(body.ts), body.reason, session.penaltyUsdc);
     await logEvent({ ...base, status: "slashed", eventKind: "distraction", penaltyUsdc: session.penaltyUsdc, txSig });
-    return NextResponse.json({ status: "slashed", livesLeft: updated?.livesLeft ?? 0, strikes: updated?.strikes ?? member.strikes + 1, txSig } satisfies EventResponse);
+    return NextResponse.json({
+      status: "slashed",
+      livesLeft: updated?.livesLeft ?? 0,
+      strikes: updated?.strikes ?? member.strikes + 1,
+      txSig,
+      penaltyUsdc: session.penaltyUsdc,
+    } satisfies EventResponse);
   } catch (err) {
     console.error("[slash] failed", err);
     await logEvent({ ...base, status: "error", eventKind: "distraction" });
