@@ -1,0 +1,15 @@
+import { NextResponse } from "next/server";
+import { markDeposit, updateMembership } from "@/lib/store";
+
+export async function POST(req: Request, { params }: { params: Promise<{ code: string; wallet: string }> }) {
+  const { code, wallet } = await params;
+  const body = await req.json().catch(() => null) as { action?: string; actorWallet?: string; txSig?: string } | null;
+  if (!body?.action) return NextResponse.json({ error: "action required" }, { status: 400 });
+  if (body.action === "deposit") {
+    const session = await markDeposit(code, wallet, String(body.txSig ?? ""));
+    return session ? NextResponse.json(session) : NextResponse.json({ error: "deposit cannot be recorded" }, { status: 409 });
+  }
+  if (!["approve", "reject", "remove"].includes(body.action) || !body.actorWallet) return NextResponse.json({ error: "invalid membership action" }, { status: 400 });
+  const session = await updateMembership(code, body.actorWallet, wallet, body.action as "approve" | "reject" | "remove");
+  return session ? NextResponse.json(session) : NextResponse.json({ error: "membership action not allowed" }, { status: 403 });
+}

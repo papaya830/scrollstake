@@ -20,6 +20,7 @@ const HEAD_DELTA = 0.06;
 const EYE_DELTA = 0.12;
 const SMOOTH_FRAMES = 7;
 const COOLDOWN_MS = 15_000;
+const HEARTBEAT_MS = 15_000;
 const WASM_ROOT = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
 const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
 const NOSE = 1, FOREHEAD = 10, CHIN = 152, LEFT_TOP = 159, LEFT_BOTTOM = 145, LEFT_IRIS = 468, RIGHT_TOP = 386, RIGHT_BOTTOM = 374, RIGHT_IRIS = 473;
@@ -69,6 +70,7 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
   const cameraTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const analyzingScreenRef = useRef(false);
   const violationSinceRef = useRef<number | null>(null);
   const cooldownUntilRef = useRef(0);
@@ -113,6 +115,20 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
     }
   }, [clientToken, code, onEvent, wallet]);
 
+  const postHeartbeat = useCallback(async () => {
+    const current = signalRef.current;
+    if (!screenStreamRef.current?.active || !cameraStreamRef.current?.active || current.screen.state !== "focused" || current.camera.state !== "focused") return;
+    try {
+      await fetch("/api/events", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-client-token": clientToken },
+        body: JSON.stringify({ code, wallet, type: "heartbeat", source: "focus", reason: "focus:locked_in", ts: Math.floor(Date.now() / 1000) }),
+      });
+    } catch {
+      // Analytics must never interrupt local monitoring or a potential slash.
+    }
+  }, [clientToken, code, wallet]);
+
   const reconcileCountdown = useCallback(() => {
     const reasons = activeReasons(signalRef.current);
     if (!reasons.length) {
@@ -146,8 +162,10 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
     suppressLossRef.current = true;
     if (screenTimerRef.current) clearInterval(screenTimerRef.current);
     if (cameraTimerRef.current) clearInterval(cameraTimerRef.current);
+    if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
     screenTimerRef.current = null;
     cameraTimerRef.current = null;
+    heartbeatTimerRef.current = null;
     clearCountdown();
     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -354,6 +372,7 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
       setStarted(true);
       screenTimerRef.current = setInterval(() => void analyzeScreen(), sampleIntervalSeconds * 1000);
       cameraTimerRef.current = setInterval(analyzeCamera, CAMERA_SAMPLE_MS);
+      heartbeatTimerRef.current = setInterval(() => void postHeartbeat(), HEARTBEAT_MS);
       setTimeout(() => void analyzeScreen(), 500);
       setTimeout(analyzeCamera, 100);
     } catch (cause) {
@@ -363,7 +382,7 @@ export default function FocusMonitor({ code, wallet, clientToken, allowedResourc
       setSignal("camera", idleSignal("Camera is off"));
       setError(cause instanceof Error ? cause.message : "Monitoring could not start.");
     }
-  }, [analyzeCamera, analyzeScreen, graceSeconds, handleStreamLost, sampleIntervalSeconds, setSignal, stopResources]);
+  }, [analyzeCamera, analyzeScreen, graceSeconds, handleStreamLost, postHeartbeat, sampleIntervalSeconds, setSignal, stopResources]);
 
   useEffect(() => {
     if (!ended) return;
