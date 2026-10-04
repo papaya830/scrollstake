@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Member, SessionAuth, SessionView } from "./session-client";
 import { depositOnChain, withdrawOnChain } from "@/lib/solana-client";
 
@@ -11,6 +11,15 @@ const memberState = (member: Member) => member.membershipStatus ?? "approved";
 export default function SessionAdminPanel({ session, auth, onRefresh }: Props) {
   const [busy, setBusy] = useState<AdminAction | null>(null);
   const [message, setMessage] = useState("");
+  // null = real-chain mode; otherwise the env vars the server reports missing.
+  const [dryRunMissing, setDryRunMissing] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (session.groupTx) return;
+    void fetch("/api/chain/config", { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) setDryRunMissing(((await response.json().catch(() => ({}))) as { missing?: string[] }).missing ?? []);
+    }).catch(() => setDryRunMissing([]));
+  }, [session.groupTx]);
+  const dryRunBanner = !session.groupTx && <p className="notice">{dryRunMissing ? `Dry-run mode: no devnet transactions are sent and wallets will not change.${dryRunMissing.length ? ` Server is missing: ${dryRunMissing.join(", ")}.` : ""}` : "This room has no on-chain group, so deposits cannot reach devnet. Create a new room."}</p>;
   const isCreator = auth.wallet === session.creatorWallet;
   const members = session.members.filter((member) => memberState(member) !== "removed");
   const pending = members.filter((member) => memberState(member) === "pending");
@@ -31,7 +40,8 @@ export default function SessionAdminPanel({ session, auth, onRefresh }: Props) {
           const chain = await depositOnChain(session.code, session.stakeUsdc);
           if (chain.wallet !== auth.wallet) throw new Error("The connected wallet must match the session wallet.");
           txSig = chain.txSig;
-        } else txSig = `DRYRUN_${Date.now()}`;
+        } else if (dryRunMissing) txSig = `DRYRUN_${Date.now()}`;
+        else throw new Error("This room has no on-chain group, so deposits cannot reach devnet. Create a new room.");
       }
       const body = action === "deposit" ? { action, txSig } : action === "end" ? { actorWallet: auth.wallet, reason: endReason } : action === "start" ? { actorWallet: auth.wallet } : { action, actorWallet: auth.wallet };
       const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", body: JSON.stringify(body) });
@@ -68,12 +78,13 @@ export default function SessionAdminPanel({ session, auth, onRefresh }: Props) {
     const status = own ? memberState(own) : auth.membershipStatus ?? "pending";
     if (status === "rejected" || status === "removed") return <section className="card lobby-state"><span className="eyebrow">Room access</span><h2>{status === "rejected" ? "Request declined" : "Removed from room"}</h2><p className="muted">You cannot fund or monitor in this session.</p></section>;
     const funded = Boolean(own?.depositedAt);
-    return <section className="card lobby-state"><span className="eyebrow">Session lobby</span><h2>{status === "pending" ? "Waiting for approval" : funded ? "Demo stake funded" : "Fund your demo stake"}</h2><p className="muted">{status === "pending" ? "The creator must approve your request before you can receive a monitoring token or fund your stake." : funded ? "You are ready. The creator can start once every approved member is funded." : "This dry-run receipt unlocks the local two-browser demo; no USDC moves."}</p>{status === "approved" && !funded && <button className="button primary" disabled={busy !== null} onClick={() => void request("deposit")}>{busy === "deposit" ? "Funding…" : `Fund $${session.stakeUsdc.toFixed(2)} demo stake`}</button>}{message && <p className={message.includes("could not") || message.includes("cannot") ? "error" : "event-toast"}>{message}</p>}</section>;
+    return <section className="card lobby-state"><span className="eyebrow">Session lobby</span><h2>{status === "pending" ? "Waiting for approval" : funded ? "Demo stake funded" : "Fund your demo stake"}</h2><p className="muted">{status === "pending" ? "The creator must approve your request before you can receive a monitoring token or fund your stake." : funded ? "You are ready. The creator can start once every approved member is funded." : "This dry-run receipt unlocks the local two-browser demo; no USDC moves."}</p>{status === "approved" && !funded && dryRunBanner}{status === "approved" && !funded && <button className="button primary" disabled={busy !== null} onClick={() => void request("deposit")}>{busy === "deposit" ? "Funding…" : `Fund $${session.stakeUsdc.toFixed(2)} demo stake`}</button>}{message && <p className={message.includes("could not") || message.includes("cannot") ? "error" : "event-toast"}>{message}</p>}</section>;
   }
 
   return <section className="card admin-panel">
     <div className="monitor-top"><div><span className="eyebrow">Creator controls</span><h2 style={{ margin: "8px 0 0" }}>Build the room.</h2></div><span className="status-pill"><span className="status-dot" />lobby</span></div>
     <div className="admin-summary"><div><span>Timer</span><strong>{duration} min</strong></div><div><span>Approved</span><strong>{approved.length}</strong></div><div><span>Funded</span><strong>{approved.length - unfunded.length}/{approved.length}</strong></div></div>
+    {dryRunBanner}
     <button className="button" disabled={busy !== null} onClick={() => void copyInviteLink()}>Copy invite link</button>
     {pending.length > 0 && <div className="admin-list"><span className="eyebrow">Join requests</span>{pending.map((member) => <div className="admin-row" key={member.wallet}><div><strong>{member.name}</strong><span>{member.wallet}</span></div><div className="row-actions"><button className="button primary" disabled={busy !== null} onClick={() => void request("approve", member)}>Approve</button><button className="button" disabled={busy !== null} onClick={() => void request("reject", member)}>Decline</button></div></div>)}</div>}
     <div className="admin-list"><span className="eyebrow">Approved members</span>{approved.map((member) => <div className="admin-row" key={member.wallet}><div><strong>{member.name}{member.wallet === session.creatorWallet ? " · creator" : ""}</strong><span>{member.depositedAt ? "Demo stake funded" : "Deposit pending"}</span></div><div className="row-actions">{member.wallet === auth.wallet && !member.depositedAt && <button className="button primary" disabled={busy !== null} onClick={() => void request("deposit", member)}>{busy === "deposit" ? "Funding…" : "Fund demo stake"}</button>}{!member.depositedAt && member.wallet !== session.creatorWallet && <button className="button" disabled={busy !== null} onClick={() => void request("remove", member)}>Remove</button>}</div></div>)}</div>
